@@ -13,7 +13,9 @@ from livekit.agents import (
     Agent,
     AgentSession,
 )
-from livekit.plugins import groq, elevenlabs, silero
+from livekit.plugins import groq, silero
+from edge_tts_plugin import EdgeTTS
+
 from dotenv import load_dotenv
 from api import all_tools
 from prompts import INSTRUCTIONS, WELCOME_MESSAGE, MODE_OCR, MODE_DESCRIBE, MODE_ASSISTANT
@@ -44,16 +46,19 @@ async def entrypoint(ctx: JobContext):
     )
 
     session = AgentSession(
-        vad=silero.VAD.load(),
-        stt=groq.STT(model="whisper-large-v3", language="es"),
-        llm=groq.LLM(model="llama-3.3-70b-versatile"),
-        tts=elevenlabs.TTS(
-            voice_id="XrExE9yKIg1WjnnlVkGX",
-            api_key=os.getenv("ELEVEN_API_KEY"),
-            streaming_latency=0,
-            auto_mode=False,
-        ),
-    )
+    vad=silero.VAD.load(
+        min_silence_duration=0.6,
+        activation_threshold=0.6,
+    ),
+    stt=groq.STT(
+        model="whisper-large-v3-turbo",  # más rápido que large-v3
+        language="es",
+    ),
+    llm=groq.LLM(model="llama-3.3-70b-versatile"),
+    tts=EdgeTTS(voice="es-PY-TaniaNeural"),
+
+)
+
 
     # ── 1. Definir función de visión PRIMERO ──────────────────────────────────
     async def _process_image(image_b64: str):
@@ -128,4 +133,7 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name="smart-glasses"
+    ))

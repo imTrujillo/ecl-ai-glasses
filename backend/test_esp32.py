@@ -21,9 +21,8 @@ async def get_token(room: str = None) -> tuple[str, str]:
         return data["token"], data["room"]
 
 async def main():
-    # Pide sala opcionalmente
-    room_input = input("Nombre de sala (Enter para generar nueva): ").strip()
-    room = room_input if room_input else None
+    room = "gafas-test"
+    print(f"Conectando a sala fija: {room}")
     
     print("Obteniendo token del servidor...")
     token, room_name = await get_token(room)

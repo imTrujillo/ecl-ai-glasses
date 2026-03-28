@@ -60,10 +60,10 @@ async def handle_esp32(websocket):
 
     logger.info(f"ESP32 conectado desde {websocket.remote_address}")
 
-    # Conectar a LiveKit si no está conectado
-    if active_room is None or not active_room.connection_state:
-        await connect_to_livekit()
-
+    # ✅ Solo conectar a LiveKit si no hay sala activa
+    if active_room is None:
+        await connect_to_livekit("gafas-test")  # sala fija, sin llamar getToken
+   
     image_chunks = {"parts": [], "total": 0}
 
     try:
