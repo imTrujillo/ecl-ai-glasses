@@ -12,9 +12,10 @@ async def run_agent():
     await proc.wait()
 
 async def run_server():
+    port = os.getenv('PORT', '8000')
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "hypercorn", "server:app",
-        "--bind", f"0.0.0.0:{os.getenv('PORT', '8000')}",
+        "--bind", f"0.0.0.0:{port}",  # ✅ mismo puerto
         stdout=sys.stdout, stderr=sys.stderr
     )
     await proc.wait()

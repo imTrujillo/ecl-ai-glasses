@@ -11,6 +11,7 @@ load_dotenv()
 logger = logging.getLogger("ws-bridge")
 
 LIVEKIT_URL = os.getenv("LIVEKIT_URL")
+PORT = os.getenv("PORT", "8000")
 
 # Estado global del bridge
 active_room: rtc.Room | None = None
@@ -21,8 +22,9 @@ async def connect_to_livekit():
     global active_room, active_room_name
 
     async with httpx.AsyncClient() as client:
+    
         r = await client.get(
-            "http://localhost:8000/getToken",
+        f"http://localhost:{PORT}/getToken",
             params={"name": "esp32-bridge"}
         )
         data = r.json()
