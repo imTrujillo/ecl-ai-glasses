@@ -2,7 +2,8 @@ import asyncio
 import websockets
 
 async def test():
-    uri = "ws://localhost:8000/ws"
+    uri = "ws://localhost:8000/ws"           # local
+    # uri = "wss://ecl-ai-glasses-production.up.railway.app/ws"  # railway
     
     async with websockets.connect(uri) as ws:
         print("✅ Conectado al bridge")

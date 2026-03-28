@@ -42,7 +42,17 @@ async def clean_room_on_startup():
 @app.before_serving
 async def startup():
     await clean_room_on_startup()
+    await _connect_bridge()  # ✅ conectar bridge al inicio
 
+
+async def _connect_bridge():
+    """Pre-conecta el bridge a LiveKit al arrancar."""
+    from ws_bridge import connect_to_livekit
+    try:
+        await connect_to_livekit()
+        print("✅ Bridge pre-conectado a LiveKit")
+    except Exception as e:
+        print(f"⚠️ Bridge startup error: {e}")
 
 @app.route("/getToken")
 @route_cors(allow_origin="*")  # ✅ CORS solo en esta ruta

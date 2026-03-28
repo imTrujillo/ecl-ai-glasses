@@ -20,29 +20,35 @@ active_room_name: str | None = None
 
 async def connect_to_livekit():
     global active_room, active_room_name
+    from livekit.api import AccessToken, VideoGrants
 
-    async with httpx.AsyncClient() as client:
-    
-        r = await client.get(
-        f"http://localhost:{PORT}/getToken",
-            params={"name": "esp32-bridge"}
+    active_room_name = os.getenv("DEFAULT_ROOM", "gafas-test")
+
+    # ✅ Generar token directo sin llamar al servidor HTTP
+    token = (
+        AccessToken(
+            os.getenv("LIVEKIT_API_KEY"),
+            os.getenv("LIVEKIT_API_SECRET"),
         )
-        data = r.json()
-        token = data["token"]
-        active_room_name = data["room"]
+        .with_identity("esp32-bridge")
+        .with_name("esp32-bridge")
+        .with_grants(VideoGrants(room_join=True, room=active_room_name))
+    )
 
     active_room = rtc.Room()
-    await active_room.connect(LIVEKIT_URL, token)
+    await active_room.connect(os.getenv("LIVEKIT_URL"), token.to_jwt())
     logger.info(f"✅ Bridge conectado a sala: {active_room_name}")
-
 
 async def handle_esp32_quart():
     global active_room
 
     logger.info("📡 ESP32 conectado")
 
+    # ✅ Ya no llama connect_to_livekit() aquí
     if active_room is None:
-        await connect_to_livekit()
+        logger.error("❌ Bridge no conectado a LiveKit")
+        await websocket.send("ERROR:Bridge no listo")
+        return
 
     try:
         while True:
