@@ -110,7 +110,8 @@ async def ws():
 
 if __name__ == "__main__":
     import subprocess, sys
+    port = os.getenv("PORT", "8000")  # ✅ Railway asigna PORT
     subprocess.run([
         sys.executable, "-m", "hypercorn", "server:app",
-        "--bind", "0.0.0.0:8000"
+        "--bind", f"0.0.0.0:{port}"  # ✅ usar ese puerto
     ])
