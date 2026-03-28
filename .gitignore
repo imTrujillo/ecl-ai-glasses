@@ -1,0 +1,23 @@
+# Entorno virtual
+venv/
+ai/
+venv311/
+.venv/
+env/
+
+# Librerías instaladas 
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Variables de entorno 
+.env
+
+# Archivos temporales
+*.mp3
+*.wav
+*.log
