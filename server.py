@@ -1,21 +1,21 @@
 import os
-from quart import Quart, request, jsonify
-from quart_cors import cors
+from quart import Quart, request, jsonify, websocket
+from quart_cors import cors, route_cors
 from livekit import api
 from livekit.api import LiveKitAPI, CreateRoomRequest, AccessToken, VideoGrants
 from dotenv import load_dotenv
+from ws_bridge import handle_esp32_quart
 
 load_dotenv()
 
 app = Quart(__name__)
-app = cors(app, allow_origin="*")
+# ✅ NO aplicar cors a toda la app, solo a rutas específicas
 
 DEFAULT_ROOM = "gafas-test"
 _dispatch_created = False
 
 
 async def clean_room_on_startup():
-    """Limpia todos los dispatches viejos al arrancar el servidor."""
     lk = LiveKitAPI(
         url=os.getenv("LIVEKIT_URL"),
         api_key=os.getenv("LIVEKIT_API_KEY"),
@@ -24,29 +24,28 @@ async def clean_room_on_startup():
     try:
         await lk.room.create_room(CreateRoomRequest(name=DEFAULT_ROOM))
         existing = await lk.agent_dispatch.list_dispatch(room_name=DEFAULT_ROOM)
-        dispatches = getattr(existing, "agent_dispatches", [])
-        for d in dispatches:
+        for d in getattr(existing, "agent_dispatches", []):
             try:
                 await lk.agent_dispatch.delete_dispatch(
                     api.DeleteAgentDispatchRequest(dispatch_id=d.id, room=DEFAULT_ROOM)
                 )
-                print(f"🗑️ Dispatch viejo eliminado al inicio: {d.id}")
-            except Exception as e:
-                print(f"⚠️ No se pudo eliminar {d.id}: {e}")
-        print(f"✅ Sala '{DEFAULT_ROOM}' limpia y lista.")
+                print(f"🗑️ Dispatch eliminado: {d.id}")
+            except Exception:
+                pass
+        print(f"✅ Sala '{DEFAULT_ROOM}' lista.")
     except Exception as e:
-        print(f"⚠️ Startup cleanup: {e}")
+        print(f"⚠️ Startup: {e}")
     finally:
         await lk.aclose()
 
 
 @app.before_serving
 async def startup():
-    """Se ejecuta UNA vez cuando arranca el servidor."""
     await clean_room_on_startup()
 
 
 @app.route("/getToken")
+@route_cors(allow_origin="*")  # ✅ CORS solo en esta ruta
 async def get_token():
     global _dispatch_created
     name = request.args.get("name", "guest")
@@ -75,16 +74,17 @@ async def get_token():
             _dispatch_created = True
             print("✅ Dispatch creado.")
         except Exception as e:
-            print(f"⚠️ Error creando dispatch: {e}")
+            print(f"⚠️ Error: {e}")
         finally:
             await lk.aclose()
     else:
-        print("⚡ Dispatch ya existe, omitiendo.")
+        print("⚡ Dispatch ya existe.")
 
     return jsonify({"token": token.to_jwt(), "room": room})
 
 
 @app.route("/reset")
+@route_cors(allow_origin="*")  # ✅ CORS solo en esta ruta
 async def reset():
     global _dispatch_created
     _dispatch_created = False
@@ -92,5 +92,15 @@ async def reset():
     return jsonify({"status": "reset ok"})
 
 
+@app.websocket("/ws")
+async def ws():
+    await websocket.accept()
+    await handle_esp32_quart()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    import subprocess, sys
+    subprocess.run([
+        sys.executable, "-m", "hypercorn", "server:app",
+        "--bind", "0.0.0.0:8000"
+    ])

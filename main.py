@@ -19,18 +19,10 @@ async def run_server():
     )
     await proc.wait()
 
-async def run_bridge():
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "ws_bridge.py",
-        stdout=sys.stdout, stderr=sys.stderr
-    )
-    await proc.wait()
-
 async def main():
     await asyncio.gather(
         run_server(),
         run_agent(),
-        run_bridge(),
     )
 
 if __name__ == "__main__":

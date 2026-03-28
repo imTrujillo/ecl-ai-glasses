@@ -1,149 +1,81 @@
-"""
-ws_bridge.py — Puente WebSocket entre ESP32 y LiveKit
-======================================================
-Corre junto a server.py y agent.py.
-El ESP32 se conecta aquí vía WiFi, y este bridge
-retransmite los datos al agente de LiveKit.
-
-Correr con:
-    python ws_bridge.py
-"""
-import asyncio
-import base64
+from __future__ import annotations
 import logging
 import os
-
-import websockets
+from quart import websocket
 from livekit import rtc
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ws-bridge")
 
 LIVEKIT_URL = os.getenv("LIVEKIT_URL")
-SERVER_URL  = "http://localhost:8000"
 
-# Sala y token se obtienen dinámicamente
+# Estado global del bridge
 active_room: rtc.Room | None = None
-active_token: str | None = None
 active_room_name: str | None = None
 
 
-async def get_token(room_name: str = None) -> tuple[str, str]:
-    import httpx
+async def connect_to_livekit():
+    global active_room, active_room_name
+
     async with httpx.AsyncClient() as client:
-        params = {"name": "esp32-bridge"}
-        if room_name:
-            params["room"] = room_name
-        r = await client.get(f"{SERVER_URL}/getToken", params=params)
+        r = await client.get(
+            "http://localhost:8000/getToken",
+            params={"name": "esp32-bridge"}
+        )
         data = r.json()
-        return data["token"], data["room"]
-
-
-async def connect_to_livekit(room_name: str = None):
-    global active_room, active_token, active_room_name
-
-    token, room = await get_token(room_name)
-    active_token     = token
-    active_room_name = room
+        token = data["token"]
+        active_room_name = data["room"]
 
     active_room = rtc.Room()
     await active_room.connect(LIVEKIT_URL, token)
-    logger.info(f"Bridge conectado a LiveKit sala: {room}")
-    return active_room
+    logger.info(f"✅ Bridge conectado a sala: {active_room_name}")
 
 
-async def handle_esp32(websocket):
+async def handle_esp32_quart():
     global active_room
 
-    logger.info(f"ESP32 conectado desde {websocket.remote_address}")
+    logger.info("📡 ESP32 conectado")
 
-    # ✅ Solo conectar a LiveKit si no hay sala activa
     if active_room is None:
-        await connect_to_livekit("gafas-test")  # sala fija, sin llamar getToken
-   
-    image_chunks = {"parts": [], "total": 0}
+        await connect_to_livekit()
 
     try:
-        async for message in websocket:
-            if isinstance(message, str):
+        while True:
+            message = await websocket.receive()
+    
 
-                # ── Modo ────────────────────────────────────────────────────
-                if message.startswith("MODE:"):
-                    mode = message.split(":")[1]
-                    logger.info(f"ESP32 → Modo: {mode}")
-                    await active_room.local_participant.publish_data(
-                        message.encode()
-                    )
+            if message.startswith("MODE:"):
+                mode = message.split(":")[1].strip()
+                logger.info(f"Modo: {mode}")
+                await active_room.local_participant.publish_data(message.encode())
 
-                # ── Audio del micrófono ──────────────────────────────────────
-                elif message.startswith("AUDIO:"):
-                    audio_b64 = message[6:]
-                    await active_room.local_participant.publish_data(
-                        message.encode()
-                    )
+            elif message.startswith("IMG_START:"):
+                total = int(message.split(":")[1])
+                logger.info(f"Imagen: {total} partes")
+                await active_room.local_participant.publish_data(message.encode())
 
-                # ── Fin de audio ─────────────────────────────────────────────
-                elif message == "AUDIO_END":
-                    await active_room.local_participant.publish_data(
-                        b"AUDIO_END"
-                    )
+            elif message.startswith("IMG_CHUNK:"):
+                await active_room.local_participant.publish_data(message.encode())
 
-                # ── Imagen en chunks ─────────────────────────────────────────
-                elif message.startswith("IMG_START:"):
-                    total = int(message.split(":")[1])
-                    image_chunks["parts"] = []
-                    image_chunks["total"] = total
-                    logger.info(f"Recibiendo imagen en {total} partes...")
-                    await active_room.local_participant.publish_data(
-                        message.encode()
-                    )
+            elif message == "IMG_END":
+                logger.info("✅ Imagen completa")
+                await active_room.local_participant.publish_data(b"IMG_END")
 
-                elif message.startswith("IMG_CHUNK:"):
-                    image_chunks["parts"].append(message)
-                    await active_room.local_participant.publish_data(
-                        message.encode()
-                    )
+            elif message.startswith("OBSTACLE:"):
+                dist = message.split(":")[1]
+                logger.warning(f"⚠️ Obstáculo a {dist}cm")
+                await active_room.local_participant.publish_data(b"MODE:assistant")
+                await active_room.local_participant.publish_data(message.encode())
 
-                elif message == "IMG_END":
-                    logger.info("Imagen completa — enviando a LiveKit")
-                    await active_room.local_participant.publish_data(
-                        b"IMG_END"
-                    )
+            elif message.startswith("HELLO:"):
+                logger.info(f"ESP32: {message}")
+                await websocket.send(f"STATUS:Conectado a {active_room_name}")
 
-                # ── Obstáculo detectado ──────────────────────────────────────
-                elif message.startswith("OBSTACLE:"):
-                    dist = message.split(":")[1]
-                    logger.warning(f"⚠️ Obstáculo a {dist}cm")
-                    # Enviar alerta al agente
-                    alert = f"MODE:assistant"
-                    await active_room.local_participant.publish_data(
-                        alert.encode()
-                    )
-                    # También enviar el mensaje de obstáculo directo
-                    await active_room.local_participant.publish_data(
-                        f"OBSTACLE:{dist}".encode()
-                    )
+            else:
+                logger.debug(f"Mensaje desconocido: {message}")
 
-                elif message.startswith("HELLO:"):
-                    logger.info(f"ESP32 identificado: {message}")
-                    await websocket.send(f"STATUS:Conectado a sala {active_room_name}")
-
-    except websockets.exceptions.ConnectionClosed:
-        logger.info("ESP32 desconectado")
     except Exception as e:
-        logger.error(f"Error bridge: {e}")
-
-
-async def main():
-    logger.info("Iniciando WebSocket bridge en puerto 8765...")
-    logger.info("El ESP32 debe conectarse a ws://TU_IP:8765/ws")
-
-    async with websockets.serve(handle_esp32, "0.0.0.0", 8765):
-        await asyncio.Future()  # correr para siempre
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        logger.error(f"Bridge error: {e}")
