@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import base64
 import io
 import logging
 import os
@@ -14,7 +15,7 @@ logger = logging.getLogger("ws-bridge")
 active_room: rtc.Room | None = None
 active_room_name: str | None = None
 esp32_websocket = None
-_audio_lock = asyncio.Lock()  # ← evita envíos concurrentes
+_audio_lock = asyncio.Lock()
 
 
 async def connect_to_livekit():
@@ -67,17 +68,19 @@ async def _reconnect_livekit():
 async def _generate_and_send_audio(text: str):
     global esp32_websocket
 
-    if esp32_websocket is None:
+    # Capturar referencia local — evita race condition
+    current_socket = esp32_websocket
+    if current_socket is None:
         logger.warning("⚠️ Sin ESP32, descartando audio")
         return
 
-    # Evitar envíos concurrentes
     if _audio_lock.locked():
         logger.warning("⚠️ Audio en proceso, descartando nuevo")
         return
 
     async with _audio_lock:
         try:
+            # Generar MP3 con edge-tts
             communicate = edge_tts.Communicate(text, "es-PY-TaniaNeural")
             audio_buffer = io.BytesIO()
 
@@ -90,25 +93,38 @@ async def _generate_and_send_audio(text: str):
                 logger.warning("⚠️ Audio vacío")
                 return
 
-            total = len(mp3_bytes)
-            logger.info(f"🔊 Enviando audio: {total} bytes")
+            # ── Convertir a base64 ──────────────────────────
+            b64_audio = base64.b64encode(mp3_bytes).decode("utf-8")
+            total_b64  = len(b64_audio)
+            CHUNK_SIZE = 10000  # mismo tamaño que el ESP32 usa para imágenes
 
-            await esp32_websocket.send(f"AUDIO_START:{total}")
+            total_chunks = (total_b64 + CHUNK_SIZE - 1) // CHUNK_SIZE
+            logger.info(f"🔊 Enviando audio: {len(mp3_bytes)} bytes → {total_b64} b64 → {total_chunks} chunks")
 
-            CHUNK = 1024
-            for i in range(0, total, CHUNK):
+            # Verificar que el socket sigue vivo antes de enviar
+            if esp32_websocket is None:
+                logger.warning("⚠️ ESP32 desconectado antes de enviar")
+                return
+
+            await current_socket.send(f"AUDIO_START:{total_chunks}")
+            await asyncio.sleep(0.1)
+
+            for i in range(total_chunks):
+                # Verificar mid-stream
                 if esp32_websocket is None:
                     logger.warning("⚠️ ESP32 desconectado mid-stream")
                     return
-                await esp32_websocket.send(mp3_bytes[i:i + CHUNK])
-                await asyncio.sleep(0.01)
 
-            await esp32_websocket.send("AUDIO_END")
+                chunk = b64_audio[i * CHUNK_SIZE:(i + 1) * CHUNK_SIZE]
+                await current_socket.send(f"AUDIO_CHUNK:{i}:{chunk}")
+                await asyncio.sleep(0.05)
+
+            await current_socket.send("AUDIO_END")
             logger.info("✅ Audio enviado completo")
 
         except Exception as e:
             logger.error(f"Error enviando audio: {e}")
-            esp32_websocket = None  # limpiar referencia rota
+            esp32_websocket = None
 
 
 async def handle_esp32_quart():
@@ -120,15 +136,22 @@ async def handle_esp32_quart():
         await websocket.send("ERROR:Bridge no listo")
         return
 
-    # Si ya hay una conexión activa, cerrarla
+    # Cerrar conexión anterior limpiamente
     if esp32_websocket is not None:
         logger.warning("⚠️ Reemplazando conexión ESP32 anterior")
+        old_socket = esp32_websocket
+        esp32_websocket = None
+        try:
+            await old_socket.close()
+        except Exception:
+            pass
+        await asyncio.sleep(0.5)
 
     esp32_websocket = websocket._get_current_object()
     logger.info("✅ ESP32 registrado")
 
     await _generate_and_send_audio(
-        "Hola, soy Navi, tu asistente de gafas inteligentes. ¿En qué puedo ayudarte?"
+        "Hola, soy Navi, tu asistente de gafas inteligentes."
     )
 
     try:
@@ -136,7 +159,7 @@ async def handle_esp32_quart():
             message = await websocket.receive()
 
             if isinstance(message, bytes):
-                continue  # ignorar binarios
+                continue
 
             logger.debug(f"ESP32 → {message[:60]}")
 
@@ -164,13 +187,13 @@ async def handle_esp32_quart():
                 dist = message.split(":")[1]
                 logger.warning(f"⚠️ Obstáculo: {dist}cm")
                 if active_room:
-                    await active_room.local_participant.publish_data(b"MODE:assistant")
                     await active_room.local_participant.publish_data(message.encode())
                 await _generate_and_send_audio(
-                    f"Atención, obstáculo detectado a {dist} centímetros."
+                    f"Atención, obstáculo a {dist} centímetros."
                 )
 
             elif message.startswith("HELLO:"):
+                logger.info(f"HELLO recibido: {message}")
                 await websocket.send(f"STATUS:Conectado a {active_room_name}")
 
     except Exception as e:
