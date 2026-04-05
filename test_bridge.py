@@ -2,8 +2,8 @@ import asyncio
 import websockets
 
 async def test():
-    uri = "ws://localhost:8000/ws"
-    # uri = "wss://ecl-ai-glasses-production.up.railway.app/ws"
+    # uri = "ws://localhost:8000/ws"
+    uri = "wss://ecl-ai-glasses-production.up.railway.app/ws"
     
     async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
         print("✅ Conectado al bridge")
@@ -25,7 +25,7 @@ async def test():
                         mp3_size = int(msg.split(":")[1])
                         mp3_buffer = bytearray()
                         print(f"\n🔊 Audio WAV iniciando — {mp3_size} bytes esperados")
-                        
+
                     elif msg == "AUDIO_END":
                         audio_count += 1
                         filename = f"audio_{audio_count}.wav"
