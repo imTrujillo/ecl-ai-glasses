@@ -42,7 +42,6 @@ async def clean_room_on_startup():
 @app.before_serving
 async def startup():
     await clean_room_on_startup()
-    await _connect_bridge()  # ✅ conectar bridge al inicio
 
 
 async def _connect_bridge():
