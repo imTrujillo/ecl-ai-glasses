@@ -4,8 +4,9 @@ import logging
 import os
 import httpx
 from livekit.agents import (
-    AutoSubscribe, JobContext, WorkerOptions, cli, Agent, AgentSession,
+    AutoSubscribe, JobContext, WorkerOptions, cli, Agent, AgentSession
 )
+from livekit.rtc import ParticipantKind
 from livekit.plugins import groq, silero
 from edge_tts_plugin import EdgeTTS
 from dotenv import load_dotenv
@@ -19,8 +20,31 @@ logger.setLevel(logging.INFO)
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_ALL)
-    participant = await ctx.wait_for_participant()
-    logger.info(f"Participant connected: {participant.identity}")
+
+    # ✅ Ignorar esp32-bridge y otros agentes — solo esperar humanos
+    logger.info("⏳ Esperando participante humano...")
+    try:
+        participant = await asyncio.wait_for(
+            ctx.wait_for_participant(kind=ParticipantKind.PARTICIPANT_KIND_STANDARD),
+            timeout=120.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("⏳ Nadie se conectó en 120s, cerrando job")
+        return
+
+    # ✅ Ignorar explícitamente el bridge por identidad también
+    if participant.identity == "esp32-bridge":
+        logger.info("🔌 esp32-bridge detectado, ignorando — esperando humano")
+        try:
+            participant = await asyncio.wait_for(
+                ctx.wait_for_participant(kind=ParticipantKind.PARTICIPANT_KIND_STANDARD),
+                timeout=120.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("⏳ Nadie se conectó tras bridge, cerrando job")
+            return
+
+    logger.info(f"✅ Participante conectado: {participant.identity}")
 
     current_mode = {"value": "assistant"}
     image_chunks = {"parts": [], "total": 0}
@@ -39,7 +63,6 @@ async def entrypoint(ctx: JobContext):
         tts=EdgeTTS(voice="es-PY-TaniaNeural"),
     )
 
-    # ── Función para hablar Y enviar al ESP32 ────────────────────────────────
     async def _say_and_send(text: str):
         session.say(text)
         try:
@@ -49,7 +72,6 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Error enviando TTS data: {e}")
 
-    # ── Función de visión ─────────────────────────────────────────────────────
     async def _process_image(image_b64: str):
         mode = current_mode["value"]
         instruction = mode_prompts.get(mode, MODE_DESCRIBE)
@@ -75,12 +97,11 @@ async def entrypoint(ctx: JobContext):
             result = response.json()
             description = result["choices"][0]["message"]["content"]
             logger.info(f"Vision OK — mode={mode}")
-            await _say_and_send(description)  # ← usa _say_and_send
+            await _say_and_send(description)
         except Exception as e:
             logger.error(f"Vision error: {e}")
             await _say_and_send("No pude procesar la imagen.")
 
-    # ── Iniciar sesión ────────────────────────────────────────────────────────
     await session.start(room=ctx.room, agent=agent)
 
     @session.on("agent_speech_committed")
@@ -95,7 +116,6 @@ async def entrypoint(ctx: JobContext):
 
     await _say_and_send(WELCOME_MESSAGE)
 
-    # ── Listener de datos ─────────────────────────────────────────────────────
     @ctx.room.on("data_received")
     def on_data_received(packet, *args, **kwargs):
         try:
