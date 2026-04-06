@@ -1,0 +1,2 @@
+tomlwebsocket_ping_interval = 20
+websocket_ping_timeout = 10

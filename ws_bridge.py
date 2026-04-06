@@ -132,8 +132,6 @@ async def _generate_and_send_audio(text: str):
             if esp32_websocket is None:
                 return
 
-            # En _generate_and_send_audio, reemplaza el loop de chunks:
-
             await current_socket.send(f"AUDIO_START:{len(wav_bytes)}")
             await asyncio.sleep(0.15)
 
@@ -141,7 +139,7 @@ async def _generate_and_send_audio(text: str):
             offset = 0
             while offset < len(wav_bytes):
                 chunk = wav_bytes[offset:offset + CHUNK]
-                await current_socket.send(chunk)  # ✅ send_bytes en lugar de send
+                await current_socket.send(chunk)  # bytes → Quart envía como frame binario
                 offset += len(chunk)
                 await asyncio.sleep(0.02)
 
@@ -176,7 +174,6 @@ async def handle_esp32_quart():
         await websocket.send("ERROR:Bridge no listo")
         return
 
-    # ✅ Solo reemplazar si el socket anterior está realmente muerto
     if esp32_websocket is not None:
         logger.warning("⚠️ Reemplazando ESP32 anterior")
         old = esp32_websocket
@@ -190,7 +187,6 @@ async def handle_esp32_quart():
     esp32_websocket = websocket._get_current_object()
     logger.info("✅ ESP32 registrado")
 
-    # Publicar en LiveKit que el bridge está activo
     if active_room:
         try:
             await active_room.local_participant.publish_data(

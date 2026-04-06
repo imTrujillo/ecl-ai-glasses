@@ -1,6 +1,6 @@
 import os
 from quart import Quart, request, jsonify, websocket
-from quart_cors import cors, route_cors
+from quart_cors import route_cors
 from livekit import api
 from livekit.api import LiveKitAPI, CreateRoomRequest, AccessToken, VideoGrants
 from dotenv import load_dotenv
@@ -9,11 +9,8 @@ from ws_bridge import handle_esp32_quart
 load_dotenv()
 
 app = Quart(__name__)
-# ✅ NO aplicar cors a toda la app, solo a rutas específicas
-
 DEFAULT_ROOM = "gafas-test"
 _dispatch_created = False
-
 
 
 async def clean_room_on_startup():
@@ -40,23 +37,13 @@ async def clean_room_on_startup():
         await lk.aclose()
 
 
-
 @app.before_serving
 async def startup():
     await clean_room_on_startup()
 
 
-async def _connect_bridge():
-    """Pre-conecta el bridge a LiveKit al arrancar."""
-    from ws_bridge import connect_to_livekit
-    try:
-        await connect_to_livekit()
-        print("✅ Bridge pre-conectado a LiveKit")
-    except Exception as e:
-        print(f"⚠️ Bridge startup error: {e}")
-
 @app.route("/getToken")
-@route_cors(allow_origin="*")  # ✅ CORS solo en esta ruta
+@route_cors(allow_origin="*")
 async def get_token():
     global _dispatch_created
     name = request.args.get("name", "guest")
@@ -95,7 +82,7 @@ async def get_token():
 
 
 @app.route("/reset")
-@route_cors(allow_origin="*")  # ✅ CORS solo en esta ruta
+@route_cors(allow_origin="*")
 async def reset():
     global _dispatch_created
     _dispatch_created = False
@@ -105,17 +92,5 @@ async def reset():
 
 @app.websocket("/ws")
 async def ws():
-    # ✅ Deshabilitar compresión — el ESP32 no soporta gzip/deflate
-    await websocket.accept(headers={
-        "Content-Encoding": "identity",
-    })
+    await websocket.accept()
     await handle_esp32_quart()
-
-
-if __name__ == "__main__":
-    import subprocess, sys
-    port = os.getenv("PORT", "8000")  # ✅ Railway asigna PORT
-    subprocess.run([
-        sys.executable, "-m", "hypercorn", "server:app",
-        "--bind", f"0.0.0.0:{port}"  # ✅ usar ese puerto
-    ])
