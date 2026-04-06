@@ -53,7 +53,7 @@ async def connect_to_livekit():
 
     @room.on("disconnected")
     def on_disconnected(*args, **kwargs):
-        logger.warning("⚠️ LiveKit desconectado — reconectando...")
+        logger.warning("⚠️ LiveKit desconectado")
         asyncio.ensure_future(_reconnect_livekit())
 
     await room.connect(os.getenv("LIVEKIT_URL"), token.to_jwt())
@@ -65,7 +65,6 @@ async def _reconnect_livekit():
     global active_room, _reconnecting
 
     if _reconnecting:
-        logger.warning("⚠️ Ya hay una reconexión en curso, ignorando")
         return
 
     _reconnecting = True
@@ -80,8 +79,8 @@ async def _reconnect_livekit():
             _reconnecting = False
             return
         except Exception as e:
-            delay = min(delay * 2, 60)  # backoff hasta 60s
-            logger.error(f"❌ Reconexión fallida (próximo intento en {delay}s): {e}")
+            delay = min(delay * 2, 60)
+            logger.error(f"❌ Reconexión fallida (próximo en {delay}s): {e}")
 
 
 async def _generate_and_send_audio(text: str):
@@ -89,7 +88,6 @@ async def _generate_and_send_audio(text: str):
 
     current_socket = esp32_websocket
     if current_socket is None:
-        logger.warning("⚠️ No hay ESP32 conectado para enviar audio")
         return
 
     if _audio_lock.locked():
@@ -98,7 +96,7 @@ async def _generate_and_send_audio(text: str):
 
     async with _audio_lock:
         try:
-            logger.info(f"🎤 Generando TTS: '{text[:50]}...'")
+            logger.info(f"🎤 TTS: '{text[:60]}'")
             communicate = edge_tts.Communicate(text, "es-PY-TaniaNeural")
             mp3_buffer = io.BytesIO()
 
@@ -108,10 +106,8 @@ async def _generate_and_send_audio(text: str):
 
             mp3_bytes = mp3_buffer.getvalue()
             if not mp3_bytes:
-                logger.error("❌ edge-tts no generó audio")
+                logger.error("❌ edge-tts vacío")
                 return
-
-            logger.info(f"🎵 MP3 generado: {len(mp3_bytes)} bytes — convirtiendo a WAV...")
 
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-y",
@@ -128,59 +124,58 @@ async def _generate_and_send_audio(text: str):
             wav_bytes, _ = await proc.communicate(input=mp3_bytes)
 
             if not wav_bytes:
-                logger.error("❌ ffmpeg no generó WAV")
+                logger.error("❌ ffmpeg vacío")
                 return
 
-            logger.info(f"🔊 WAV listo: {len(wav_bytes)} bytes — enviando al ESP32...")
+            logger.info(f"🔊 WAV: {len(wav_bytes)} bytes")
 
             if esp32_websocket is None:
-                logger.warning("⚠️ ESP32 se desconectó antes de enviar audio")
                 return
 
+            # ✅ Enviar en chunks binarios crudos — sin compresión
             await current_socket.send(f"AUDIO_START:{len(wav_bytes)}")
-            await asyncio.sleep(0.1)  # pausa más larga para que ESP32 se prepare
+            await asyncio.sleep(0.15)
 
-            # Enviar en chunks de 4KB para no saturar el WS
             CHUNK = 4096
             offset = 0
             while offset < len(wav_bytes):
                 chunk = wav_bytes[offset:offset + CHUNK]
                 await current_socket.send(chunk)
                 offset += len(chunk)
-                await asyncio.sleep(0.01)  # pequeña pausa entre chunks
+                await asyncio.sleep(0.02)
 
             await current_socket.send("AUDIO_END")
-            logger.info(f"✅ Audio WAV enviado completo ({len(wav_bytes)} bytes)")
+            logger.info("✅ Audio enviado")
 
         except Exception as e:
-            logger.error(f"❌ Error enviando audio: {e}")
+            logger.error(f"❌ Error audio: {e}")
             esp32_websocket = None
 
 
 async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
 
-    logger.info("📡 ESP32 conectado al bridge")
+    logger.info("📡 ESP32 conectando...")
 
     if active_room is None:
-        logger.info("🔌 Conectando bridge a LiveKit...")
         try:
             await connect_to_livekit()
         except Exception as e:
-            logger.error(f"❌ No se pudo conectar a LiveKit: {e}")
+            logger.error(f"❌ LiveKit: {e}")
             await websocket.send("ERROR:Bridge no listo")
             return
 
     for i in range(15):
         if active_room is not None:
             break
-        logger.warning(f"⏳ Esperando LiveKit... ({i+1}/15)")
+        logger.warning(f"⏳ Esperando LiveKit {i+1}/15")
         await asyncio.sleep(1)
 
     if active_room is None:
         await websocket.send("ERROR:Bridge no listo")
         return
 
+    # ✅ Solo reemplazar si el socket anterior está realmente muerto
     if esp32_websocket is not None:
         logger.warning("⚠️ Reemplazando ESP32 anterior")
         old = esp32_websocket
@@ -189,10 +184,19 @@ async def handle_esp32_quart():
             await old.close()
         except Exception:
             pass
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
 
     esp32_websocket = websocket._get_current_object()
-    logger.info("✅ ESP32 registrado correctamente")
+    logger.info("✅ ESP32 registrado")
+
+    # Publicar en LiveKit que el bridge está activo
+    if active_room:
+        try:
+            await active_room.local_participant.publish_data(
+                b"BRIDGE:connected", reliable=True
+            )
+        except Exception:
+            pass
 
     await _generate_and_send_audio("Hola, soy Navi, tu asistente de gafas inteligentes.")
 
@@ -203,7 +207,6 @@ async def handle_esp32_quart():
             if isinstance(message, bytes):
                 if _collecting_image:
                     _img_buffer.extend(message)
-                    logger.debug(f"[IMG] 📦 {len(_img_buffer)}/{_img_total} bytes")
                 continue
 
             logger.info(f"[WS] 📨 {message[:80]}")
@@ -213,9 +216,11 @@ async def handle_esp32_quart():
 
             elif message.startswith("MODE:"):
                 mode = message.split(":")[1].strip()
-                logger.info(f"[MODE] Cambiando a: {mode}")
+                logger.info(f"[MODE] → {mode}")
                 if active_room:
-                    await active_room.local_participant.publish_data(message.encode())
+                    await active_room.local_participant.publish_data(
+                        message.encode(), reliable=True
+                    )
                 if mode != "assistant":
                     await _generate_and_send_audio(f"Modo {mode} activado.")
 
@@ -225,42 +230,42 @@ async def handle_esp32_quart():
                 _img_total = int(parts[-1])
                 _img_buffer = bytearray()
                 _collecting_image = True
-                logger.info(f"[IMG] 📥 Iniciando — modo={_img_mode} esperando={_img_total} bytes")
+                logger.info(f"[IMG] 📥 modo={_img_mode} total={_img_total}")
 
             elif message == "IMG_END":
                 _collecting_image = False
                 received = len(_img_buffer)
-                logger.info(f"[IMG] ✅ Completa — {received}/{_img_total} bytes")
+                logger.info(f"[IMG] ✅ {received}/{_img_total} bytes")
 
                 if active_room and received > 0:
                     img_b64 = base64.b64encode(_img_buffer).decode("utf-8")
-                    logger.info(f"[IMG] 📤 Enviando al agente — {len(img_b64)} chars b64")
                     await active_room.local_participant.publish_data(
-                        f"IMG_START:{_img_mode}:0".encode()
+                        f"IMG_START:{_img_mode}:0".encode(), reliable=True
                     )
                     await active_room.local_participant.publish_data(
-                        f"IMG_CHUNK:0:{img_b64}".encode()
+                        f"IMG_CHUNK:0:{img_b64}".encode(), reliable=True
                     )
-                    await active_room.local_participant.publish_data(b"IMG_END")
+                    await active_room.local_participant.publish_data(
+                        b"IMG_END", reliable=True
+                    )
                     logger.info("[IMG] ✅ Enviado al agente")
-                else:
-                    logger.warning("[IMG] ⚠️ Buffer vacío o sin sala — descartando")
 
             elif message.startswith("OBSTACLE:"):
                 dist = message.split(":")[1]
-                logger.info(f"[OBSTACLE] 🚨 {dist} cm")
                 if active_room:
-                    await active_room.local_participant.publish_data(message.encode())
+                    await active_room.local_participant.publish_data(
+                        message.encode(), reliable=True
+                    )
                 await _generate_and_send_audio(
                     f"Atención, obstáculo a {dist} centímetros."
                 )
 
             else:
-                logger.info(f"[WS] ❓ Mensaje desconocido: {message}")
+                logger.info(f"[WS] ❓ {message[:50]}")
 
     except Exception as e:
         logger.error(f"❌ Bridge error: {e}")
     finally:
         esp32_websocket = None
         _collecting_image = False
-        logger.info("📡 ESP32 desconectado del bridge")
+        logger.info("📡 ESP32 desconectado")

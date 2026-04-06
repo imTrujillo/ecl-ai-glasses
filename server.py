@@ -15,6 +15,7 @@ DEFAULT_ROOM = "gafas-test"
 _dispatch_created = False
 
 
+
 async def clean_room_on_startup():
     lk = LiveKitAPI(
         url=os.getenv("LIVEKIT_URL"),
@@ -37,6 +38,7 @@ async def clean_room_on_startup():
         print(f"⚠️ Startup: {e}")
     finally:
         await lk.aclose()
+
 
 
 @app.before_serving
@@ -103,7 +105,10 @@ async def reset():
 
 @app.websocket("/ws")
 async def ws():
-    await websocket.accept()
+    # ✅ Deshabilitar compresión — el ESP32 no soporta gzip/deflate
+    await websocket.accept(headers={
+        "Content-Encoding": "identity",
+    })
     await handle_esp32_quart()
 
 
