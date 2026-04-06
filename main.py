@@ -15,7 +15,8 @@ async def run_server():
     port = os.getenv('PORT', '8000')
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "hypercorn", "server:app",
-        "--bind", f"0.0.0.0:{port}",  # ✅ mismo puerto
+        "--bind", f"0.0.0.0:{port}",
+        "--no-websocket-per-message-deflate",  # ✅ deshabilitar compresión WS
         stdout=sys.stdout, stderr=sys.stderr
     )
     await proc.wait()

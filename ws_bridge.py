@@ -141,7 +141,7 @@ async def _generate_and_send_audio(text: str):
             offset = 0
             while offset < len(wav_bytes):
                 chunk = wav_bytes[offset:offset + CHUNK]
-                await current_socket.send_bytes(chunk)  # ✅ send_bytes en lugar de send
+                await current_socket.send(chunk)  # ✅ send_bytes en lugar de send
                 offset += len(chunk)
                 await asyncio.sleep(0.02)
 
