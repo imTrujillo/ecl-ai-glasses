@@ -132,7 +132,8 @@ async def _generate_and_send_audio(text: str):
             if esp32_websocket is None:
                 return
 
-            # ✅ Enviar en chunks binarios crudos — sin compresión
+            # En _generate_and_send_audio, reemplaza el loop de chunks:
+
             await current_socket.send(f"AUDIO_START:{len(wav_bytes)}")
             await asyncio.sleep(0.15)
 
@@ -140,7 +141,7 @@ async def _generate_and_send_audio(text: str):
             offset = 0
             while offset < len(wav_bytes):
                 chunk = wav_bytes[offset:offset + CHUNK]
-                await current_socket.send(chunk)
+                await current_socket.send_bytes(chunk)  # ✅ send_bytes en lugar de send
                 offset += len(chunk)
                 await asyncio.sleep(0.02)
 
