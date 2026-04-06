@@ -21,7 +21,6 @@ logger.setLevel(logging.INFO)
 async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_ALL)
 
-    # ✅ Ignorar esp32-bridge y otros agentes — solo esperar humanos
     logger.info("⏳ Esperando participante humano...")
     try:
         participant = await asyncio.wait_for(
@@ -32,7 +31,6 @@ async def entrypoint(ctx: JobContext):
         logger.warning("⏳ Nadie se conectó en 120s, cerrando job")
         return
 
-    # ✅ Ignorar explícitamente el bridge por identidad también
     if participant.identity == "esp32-bridge":
         logger.info("🔌 esp32-bridge detectado, ignorando — esperando humano")
         try:
@@ -46,16 +44,15 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(f"✅ Participante conectado: {participant.identity}")
 
-    current_mode = {"value": "assistant"}
-    image_chunks = {"parts": [], "total": 0}
-    mode_prompts = {
-        "ocr": MODE_OCR,
-        "describe": MODE_DESCRIBE,
+    current_mode  = {"value": "assistant"}
+    image_chunks  = {"parts": [], "total": 0, "mode": "describe"}
+    mode_prompts  = {
+        "ocr":       MODE_OCR,
+        "describe":  MODE_DESCRIBE,
         "assistant": MODE_ASSISTANT,
     }
 
-    agent = Agent(instructions=INSTRUCTIONS, tools=all_tools())
-
+    agent   = Agent(instructions=INSTRUCTIONS, tools=all_tools())
     session = AgentSession(
         vad=silero.VAD.load(min_silence_duration=0.6, activation_threshold=0.6),
         stt=groq.STT(model="whisper-large-v3-turbo", language="es"),
@@ -72,9 +69,9 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"Error enviando TTS data: {e}")
 
-    async def _process_image(image_b64: str):
-        mode = current_mode["value"]
+    async def _process_image(image_b64: str, mode: str):
         instruction = mode_prompts.get(mode, MODE_DESCRIBE)
+        logger.info(f"[IMG] 🔍 Procesando — modo={mode}")
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.post(
@@ -95,8 +92,13 @@ async def entrypoint(ctx: JobContext):
                     }
                 )
             result = response.json()
+            logger.info(f"[IMG] Groq response keys: {list(result.keys())}")
+            if "choices" not in result:
+                logger.error(f"[IMG] ❌ Sin choices — respuesta: {result}")
+                await _say_and_send("No pude procesar la imagen.")
+                return
             description = result["choices"][0]["message"]["content"]
-            logger.info(f"Vision OK — mode={mode}")
+            logger.info(f"[IMG] ✅ Vision OK — modo={mode}")
             await _say_and_send(description)
         except Exception as e:
             logger.error(f"Vision error: {e}")
@@ -127,23 +129,28 @@ async def entrypoint(ctx: JobContext):
                     current_mode["value"] = mode
                     logger.info(f"Mode changed to: {mode}")
                     if mode != "assistant":
-                        asyncio.ensure_future(
-                            _say_and_send(f"Modo {mode} activado.")
-                        )
+                        asyncio.ensure_future(_say_and_send(f"Modo {mode} activado."))
 
             elif message.startswith("IMG_START:"):
-                total = int(message.split(":")[1])
+                # formato: IMG_START:modo:0
+                parts = message.split(":")
+                mode = parts[1] if len(parts) > 2 else current_mode["value"]
                 image_chunks["parts"] = []
-                image_chunks["total"] = total
+                image_chunks["total"] = 0
+                image_chunks["mode"]  = mode
+                logger.info(f"[IMG] 📥 Recibiendo imagen — modo={mode}")
 
             elif message.startswith("IMG_CHUNK:"):
                 _, idx, data = message.split(":", 2)
                 image_chunks["parts"].append((int(idx), data))
+                logger.info(f"[IMG] 📦 Chunk {idx} recibido — {len(data)} chars")
 
             elif message == "IMG_END":
                 image_chunks["parts"].sort(key=lambda x: x[0])
                 full_b64 = "".join(part for _, part in image_chunks["parts"])
-                asyncio.ensure_future(_process_image(full_b64))
+                mode     = image_chunks["mode"]
+                logger.info(f"[IMG] ✅ Imagen completa — {len(full_b64)} chars b64 modo={mode}")
+                asyncio.ensure_future(_process_image(full_b64, mode))
 
         except Exception as e:
             logger.error(f"DataChannel error: {e}")
