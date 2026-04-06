@@ -22,6 +22,30 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_ALL)
 
     logger.info("⏳ Esperando participante humano...")
+    participant = None
+
+    # ✅ Esperar hasta encontrar un participante que NO sea el bridge
+    deadline = asyncio.get_event_loop().time() + 120
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            p = await asyncio.wait_for(
+                ctx.wait_for_participant(),
+                timeout=10.0
+            )
+            if p.identity != "esp32-bridge":
+                participant = p
+                break
+            logger.info(f"🔌 Ignorando bridge: {p.identity}")
+        except asyncio.TimeoutError:
+            continue
+
+    if participant is None:
+        logger.warning("⏳ Nadie se conectó en 120s, cerrando job")
+        return
+
+    logger.info(f"✅ Participante conectado: {participant.identity}")
+
+
     try:
         participant = await asyncio.wait_for(
             ctx.wait_for_participant(kind=ParticipantKind.PARTICIPANT_KIND_STANDARD),
