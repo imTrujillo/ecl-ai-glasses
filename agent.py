@@ -23,8 +23,8 @@ async def entrypoint(ctx: JobContext):
 
     logger.info("⏳ Esperando participante humano...")
     participant = None
-
     deadline = asyncio.get_event_loop().time() + 120
+
     while asyncio.get_event_loop().time() < deadline:
         try:
             p = await asyncio.wait_for(
@@ -35,13 +35,15 @@ async def entrypoint(ctx: JobContext):
                 participant = p
                 break
             logger.info(f"🔌 Ignorando bridge: {p.identity}")
+            await asyncio.sleep(2)  # ✅ pausa antes de volver a esperar
         except asyncio.TimeoutError:
+            await asyncio.sleep(1)  # ✅ pausa en timeout también
             continue
 
     if participant is None:
-        logger.warning("⏳ Nadie se conectó en 120s, cerrando job")
+        logger.warning("⏳ Nadie se conectó en 120s")
         return
-
+    
     logger.info(f"✅ Participante conectado: {participant.identity}")
 
     current_mode  = {"value": "assistant"}
