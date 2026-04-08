@@ -1,2 +1,4 @@
-tomlwebsocket_ping_interval = 20
-websocket_ping_timeout = 10
+keep_alive_timeout = 120
+worker_class = "asyncio"
+websocket_ping_interval = 20
+websocket_ping_timeout = 60
