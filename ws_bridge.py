@@ -184,35 +184,21 @@ async def _generate_and_send_audio(text: str):
 
             logger.info(f"🔊 RAW listo: {len(raw_bytes)} bytes — enviando al ESP32...")
 
-            # Re-verificar socket después de la conversión (puede haber tardado)
+            # Re-verificar socket después de la conversión
             if esp32_websocket is None:
                 logger.warning("⚠️ ESP32 se desconectó durante generación de audio")
                 return
 
+            # ✅ Enviar todo de una vez — sin chunks ni sleeps intermedios
             await current_socket.send(f"AUDIO_START:{len(raw_bytes)}")
             await asyncio.sleep(0.1)
-
-            CHUNK = 4096
-            offset = 0
-            chunks_sent = 0
-            while offset < len(raw_bytes):
-                # Verificar socket en cada chunk
-                if esp32_websocket is None:
-                    logger.warning("⚠️ ESP32 desconectado durante envío de audio")
-                    return
-                chunk = raw_bytes[offset:offset + CHUNK]
-                await current_socket.send(chunk)
-                offset += len(chunk)
-                chunks_sent += 1
-                await asyncio.sleep(0.02)
-
+            await current_socket.send(raw_bytes)
             await current_socket.send("AUDIO_END")
-            logger.info(f"✅ Audio enviado — {chunks_sent} chunks, {len(raw_bytes)} bytes total")
+            logger.info(f"✅ Audio enviado — {len(raw_bytes)} bytes en un solo envío")
 
         except Exception as e:
             logger.error(f"❌ Error generando/enviando audio: {e}", exc_info=True)
             esp32_websocket = None
-
 
 async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
