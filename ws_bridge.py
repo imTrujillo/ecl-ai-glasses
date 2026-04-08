@@ -106,50 +106,49 @@ async def _generate_and_send_audio(text: str):
 
             mp3_bytes = mp3_buffer.getvalue()
             if not mp3_bytes:
-                logger.error("❌ edge-tts vacío")
                 return
 
+            # ✅ Convertir a RAW 8kHz, 8-bit unsigned, mono — perfecto para DAC ESP32
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-y",
                 "-i", "pipe:0",
-                "-ar", "16000",
-                "-ac", "1",
-                "-acodec", "pcm_s16le",
-                "-f", "wav",
+                "-ar", "8000",          # 8kHz
+                "-ac", "1",             # mono
+                "-f", "u8",             # unsigned 8-bit
                 "pipe:1",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            wav_bytes, _ = await proc.communicate(input=mp3_bytes)
+            raw_bytes, _ = await proc.communicate(input=mp3_bytes)
 
-            if not wav_bytes:
+            if not raw_bytes:
                 logger.error("❌ ffmpeg vacío")
                 return
 
-            logger.info(f"🔊 WAV: {len(wav_bytes)} bytes")
+            logger.info(f"🔊 RAW: {len(raw_bytes)} bytes a 8kHz")
 
             if esp32_websocket is None:
                 return
 
-            await current_socket.send(f"AUDIO_START:{len(wav_bytes)}")
-            await asyncio.sleep(0.15)
+            await current_socket.send(f"AUDIO_START:{len(raw_bytes)}")
+            await asyncio.sleep(0.1)
 
+            # Enviar en chunks de 4KB
             CHUNK = 4096
             offset = 0
-            while offset < len(wav_bytes):
-                chunk = wav_bytes[offset:offset + CHUNK]
-                await current_socket.send(chunk)  # bytes → Quart envía como frame binario
+            while offset < len(raw_bytes):
+                chunk = raw_bytes[offset:offset + CHUNK]
+                await current_socket.send(chunk)
                 offset += len(chunk)
                 await asyncio.sleep(0.02)
 
             await current_socket.send("AUDIO_END")
-            logger.info("✅ Audio enviado")
+            logger.info("✅ Audio RAW enviado")
 
         except Exception as e:
             logger.error(f"❌ Error audio: {e}")
             esp32_websocket = None
-
 
 async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
