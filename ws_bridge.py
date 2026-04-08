@@ -34,6 +34,35 @@ _collecting_image = False
 _last_obstacle_audio = 0.0
 OBSTACLE_AUDIO_COOLDOWN = 4.0  # segundos entre alertas de voz
 
+async def _ensure_agent_dispatched():
+    """Crea el dispatch del agente si no existe."""
+    from livekit.api import LiveKitAPI
+    from livekit import api
+    
+    logger.info("🤖 Verificando dispatch del agente...")
+    lk = LiveKitAPI(
+        url=os.getenv("LIVEKIT_URL"),
+        api_key=os.getenv("LIVEKIT_API_KEY"),
+        api_secret=os.getenv("LIVEKIT_API_SECRET"),
+    )
+    try:
+        existing = await lk.agent_dispatch.list_dispatch(room_name=active_room_name)
+        dispatches = getattr(existing, "agent_dispatches", [])
+        if dispatches:
+            logger.info(f"⚡ Agente ya despachado ({len(dispatches)} dispatch activo)")
+            return
+        
+        await lk.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(
+                agent_name="smart-glasses",
+                room=active_room_name
+            )
+        )
+        logger.info("✅ Dispatch del agente creado")
+    except Exception as e:
+        logger.error(f"❌ Error creando dispatch: {e}")
+    finally:
+        await lk.aclose()
 
 async def connect_to_livekit():
     global active_room, active_room_name
@@ -189,6 +218,9 @@ async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
 
     logger.info("📡 Nueva conexión WebSocket entrante")
+
+    # ── Despachar agente ──────────────────────────────────────────────────────
+    await _ensure_agent_dispatched()
 
     # ── Conectar a LiveKit si no está conectado ───────────────────────────────
     if active_room is None:

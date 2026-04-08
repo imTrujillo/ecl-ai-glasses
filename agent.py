@@ -106,8 +106,6 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"Vision error: {e}")
             await _say_and_send("No pude procesar la imagen.")
 
-    await session.start(room=ctx.room, agent=agent)
-
     @session.on("agent_speech_committed")
     def on_speech_committed(msg, *args, **kwargs):
         text = msg.content if hasattr(msg, "content") else str(msg)
@@ -117,9 +115,7 @@ async def entrypoint(ctx: JobContext):
                     f"TTS:{text}".encode(), reliable=True
                 )
             )
-
-    await _say_and_send(WELCOME_MESSAGE)
-
+            
     @ctx.room.on("data_received")
     def on_data_received(packet, *args, **kwargs):
         try:
@@ -157,6 +153,8 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"DataChannel error: {e}")
 
+    await session.start(room=ctx.room, agent=agent)
+    await _say_and_send(WELCOME_MESSAGE)
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
