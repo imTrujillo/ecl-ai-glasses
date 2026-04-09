@@ -25,20 +25,12 @@ async def entrypoint(ctx: JobContext):
     participant = None
     deadline = asyncio.get_event_loop().time() + 120
 
-    while asyncio.get_event_loop().time() < deadline:
-        try:
-            p = await asyncio.wait_for(
-                ctx.wait_for_participant(),
-                timeout=10.0
-            )
-            if p.identity != "esp32-bridge":
-                participant = p
-                break
-            logger.info(f"🔌 Ignorando bridge: {p.identity}")
-            await asyncio.sleep(2)  # ✅ pausa antes de volver a esperar
-        except asyncio.TimeoutError:
-            await asyncio.sleep(1)  # ✅ pausa en timeout también
-            continue
+    participant = await asyncio.wait_for(
+    ctx.wait_for_participant(),
+    timeout=30.0
+    
+    )
+    logger.info(f"✅ Got participant: {participant.identity}")
 
     if participant is None:
         logger.warning("⏳ Nadie se conectó en 120s")
