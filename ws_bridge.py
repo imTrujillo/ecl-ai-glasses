@@ -292,8 +292,8 @@ async def handle_esp32_quart():
         except Exception as e:
             logger.error(f"❌ Error notificando agente: {e}")
 
-    # Audio de bienvenida — usa el nuevo streaming
-    await _generate_and_send_audio("Hola, soy Navi, tu asistente de gafas inteligentes.")
+    # Audio de conexión — usa el nuevo streaming
+    await _generate_and_send_audio("Conectado.")
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
