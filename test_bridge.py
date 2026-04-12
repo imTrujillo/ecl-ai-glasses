@@ -2,9 +2,9 @@ import asyncio
 import websockets
 
 async def test():
-    # uri = "ws://localhost:8000/ws"
+    uri = "ws://localhost:8000/ws"
     # uri = "wss://ecl-ai-glasses-production.up.railway.app/ws"
-    uri = "wss://lexicological-semestrial-johnathan.ngrok-free.dev/ws"
+    # uri = "wss://lexicological-semestrial-johnathan.ngrok-free.dev/ws"
     
     async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
         print("✅ Conectado al bridge")
