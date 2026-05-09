@@ -142,6 +142,20 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"[IMG] ✅ Imagen completa — {len(full_b64)} chars b64 modo={mode}")
                 asyncio.ensure_future(_process_image(full_b64, mode))
 
+            elif message.startswith("USER_UTTERANCE:"):
+                utt = message.split(":", 1)[1].strip()
+                if not utt:
+                    return
+                snippet = utt[:4000]
+
+                async def _reply_voice_text(user_text):
+                    try:
+                        await session.generate_reply(user_input=user_text)
+                    except Exception as ex:
+                        logger.error(f"[VOICE/TEXT] generate_reply: {ex}")
+
+                asyncio.ensure_future(_reply_voice_text(snippet))
+
         except Exception as e:
             logger.error(f"DataChannel error: {e}")
 

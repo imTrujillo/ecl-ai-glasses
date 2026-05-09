@@ -3,7 +3,9 @@ import asyncio
 import base64
 import logging
 import os
+
 import edge_tts
+import httpx
 from quart import websocket
 from livekit import rtc
 from dotenv import load_dotenv
@@ -28,6 +30,11 @@ _img_buffer       = bytearray()
 _img_total        = 0
 _img_mode         = "describe"
 _collecting_image = False
+
+# ESP32 → bridge: WAV (PCM16 mono common) chunked like images
+_collecting_record = False
+_record_buffer     = bytearray()
+_record_expected   = 0
 
 # Throttle alertas de obstáculo
 _last_obstacle_audio = 0.0
@@ -64,6 +71,39 @@ async def _ensure_agent_dispatched():
         logger.error(f"❌ Error creando dispatch: {e}")
     finally:
         await lk.aclose()
+
+
+async def _transcribe_wav_and_publish_to_agent(wav_bytes: bytes):
+    """ESP32 envía WAV de prueba o micrófono futuro → Groq Whisper → agente."""
+    if not wav_bytes or len(wav_bytes) < 200:
+        logger.warning(f"⚠️ WAV demasiado corto ({len(wav_bytes) if wav_bytes else 0} B)")
+        return
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not groq_key:
+        logger.error("❌ GROQ_API_KEY falta — no se puede transcribir")
+        return
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            r = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {groq_key}"},
+                files={"file": ("esp32.wav", wav_bytes, "audio/wav")},
+                data={
+                    "model": "whisper-large-v3-turbo",
+                    "language": "es",
+                },
+            )
+        r.raise_for_status()
+        text = r.json().get("text", "").strip()
+        logger.info(f"🎙️ Whisper: '{text}'")
+        if text and active_room:
+            await active_room.local_participant.publish_data(
+                f"USER_UTTERANCE:{text}".encode("utf-8"),
+                reliable=True,
+            )
+    except Exception as e:
+        logger.error(f"❌ Transcripción / envío agente: {e}", exc_info=True)
 
 
 async def connect_to_livekit():
@@ -245,6 +285,7 @@ async def _generate_and_send_audio(text: str):
 
 async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
+    global _collecting_record, _record_buffer, _record_expected
 
     logger.info("📡 Nueva conexión WebSocket entrante")
 
@@ -313,10 +354,12 @@ async def handle_esp32_quart():
         while True:
             message = await websocket.receive()
 
-            # Datos binarios — solo pueden ser chunks de imagen
+            # Datos binarios — chunks JPEG (IMG_* ) o WAV (RECORD_*)
             if isinstance(message, bytes):
                 if _collecting_image:
                     _img_buffer.extend(message)
+                elif _collecting_record:
+                    _record_buffer.extend(message)
                 else:
                     logger.warning(f"⚠️ BIN fuera de contexto: {len(message)} bytes")
                 continue
@@ -343,6 +386,8 @@ async def handle_esp32_quart():
             # ── IMG_START ─────────────────────────────────────────────────────
             elif message.startswith("IMG_START:"):
                 parts = message.split(":")
+                _collecting_record = False
+                _record_buffer = bytearray()
                 _img_mode  = parts[1] if len(parts) > 2 else "describe"
                 _img_total = int(parts[-1])
                 _img_buffer = bytearray()
@@ -370,6 +415,23 @@ async def handle_esp32_quart():
                     except Exception as e:
                         logger.error(f"❌ Error enviando imagen: {e}")
 
+            # ── RECORD_* — ESP32→bridge WAV ─────────────────────────────────
+            elif message.startswith("RECORD_START:"):
+                _collecting_image = False
+                _img_buffer = bytearray()
+                _record_expected = int(message.split(":")[1].strip())
+                _record_buffer = bytearray()
+                _collecting_record = True
+                logger.info(f"🎙️ RECORD_START esperando {_record_expected} B WAV")
+
+            elif message == "RECORD_END":
+                _collecting_record = False
+                got = len(_record_buffer)
+                logger.info(f"🎙️ RECORD_END — recibidos {got}/{_record_expected} B")
+                wav_copy = bytes(_record_buffer)
+                _record_buffer = bytearray()
+                asyncio.ensure_future(_transcribe_wav_and_publish_to_agent(wav_copy))
+
             # ── OBSTACLE ──────────────────────────────────────────────────────
             elif message.startswith("OBSTACLE:"):
                 dist = message.split(":")[1]
@@ -396,4 +458,6 @@ async def handle_esp32_quart():
         heartbeat_task.cancel()
         esp32_websocket = None
         _collecting_image = False
+        _collecting_record = False
+        _record_buffer = bytearray()
         logger.info("📡 ESP32 desconectado — limpieza completa")
