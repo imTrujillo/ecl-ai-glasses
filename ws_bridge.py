@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Nombre de sala para API + RTC (debe estar definido antes de dispatch / connect)
+_DEFAULT_ROOM = os.getenv("DEFAULT_ROOM", "gafas-test")
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger("ws-bridge")
 
 active_room: rtc.Room | None = None
-active_room_name: str | None = None
+active_room_name: str | None = _DEFAULT_ROOM
 esp32_websocket = None
 _audio_lock = asyncio.Lock()
 _reconnecting = False
@@ -44,18 +47,55 @@ OBSTACLE_AUDIO_COOLDOWN = 4.0
 #  LiveKit helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _ensure_agent_dispatched():
-    from livekit.api import LiveKitAPI
-    from livekit import api
+async def safe_publish_data(payload: bytes, *, reliable: bool = True) -> bool:
+    """Publica datos en la sala; no tumba el handler si el motor RTC está cerrado."""
+    global active_room
+    if active_room is None:
+        return False
+    try:
+        await active_room.local_participant.publish_data(payload, reliable=reliable)
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ publish_data omitido (LiveKit): {e}")
+        return False
 
-    logger.info("🤖 Verificando dispatch del agente...")
+
+async def _ensure_livekit_room_exists():
+    """Crea la sala en el servidor si no existe (dispatch falla con 404 si falta)."""
+    from livekit.api import LiveKitAPI, CreateRoomRequest
+
+    room_name = active_room_name or _DEFAULT_ROOM
     lk = LiveKitAPI(
         url=os.getenv("LIVEKIT_URL"),
         api_key=os.getenv("LIVEKIT_API_KEY"),
         api_secret=os.getenv("LIVEKIT_API_SECRET"),
     )
     try:
-        existing = await lk.agent_dispatch.list_dispatch(room_name=active_room_name)
+        await lk.room.create_room(CreateRoomRequest(name=room_name))
+        logger.info(f"✅ Sala LiveKit disponible: {room_name}")
+    except Exception as e:
+        msg = str(e).lower()
+        if "already exists" in msg or "409" in msg or "duplicate" in msg:
+            logger.debug(f"Sala ya existía: {room_name}")
+        else:
+            logger.warning(f"⚠️ create_room ({room_name}): {e}")
+    finally:
+        await lk.aclose()
+
+
+async def _ensure_agent_dispatched():
+    from livekit.api import LiveKitAPI
+    from livekit import api
+
+    logger.info("🤖 Verificando dispatch del agente...")
+    room_name = active_room_name or _DEFAULT_ROOM
+    lk = LiveKitAPI(
+        url=os.getenv("LIVEKIT_URL"),
+        api_key=os.getenv("LIVEKIT_API_KEY"),
+        api_secret=os.getenv("LIVEKIT_API_SECRET"),
+    )
+    try:
+        existing = await lk.agent_dispatch.list_dispatch(room_name=room_name)
         dispatches = getattr(existing, "agent_dispatches", [])
         if dispatches:
             logger.info(f"⚡ Agente ya despachado ({len(dispatches)} dispatch activo)")
@@ -63,7 +103,7 @@ async def _ensure_agent_dispatched():
         await lk.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
                 agent_name="smart-glasses",
-                room=active_room_name,
+                room=room_name,
             )
         )
         logger.info("✅ Dispatch del agente creado")
@@ -97,11 +137,8 @@ async def _transcribe_wav_and_publish_to_agent(wav_bytes: bytes):
         r.raise_for_status()
         text = r.json().get("text", "").strip()
         logger.info(f"🎙️ Whisper: '{text}'")
-        if text and active_room:
-            await active_room.local_participant.publish_data(
-                f"USER_UTTERANCE:{text}".encode("utf-8"),
-                reliable=True,
-            )
+        if text:
+            await safe_publish_data(f"USER_UTTERANCE:{text}".encode("utf-8"))
     except Exception as e:
         logger.error(f"❌ Transcripción / envío agente: {e}", exc_info=True)
 
@@ -110,7 +147,7 @@ async def connect_to_livekit():
     global active_room, active_room_name
     from livekit.api import AccessToken, VideoGrants
 
-    active_room_name = os.getenv("DEFAULT_ROOM", "gafas-test")
+    active_room_name = _DEFAULT_ROOM
     logger.info(f"🔌 Conectando a LiveKit — sala: {active_room_name}")
 
     token = (
@@ -289,7 +326,8 @@ async def handle_esp32_quart():
 
     logger.info("📡 Nueva conexión WebSocket entrante")
 
-    # Despachar agente si no existe
+    # Sala debe existir en LiveKit Cloud antes de agent dispatch (evita 404)
+    await _ensure_livekit_room_exists()
     await _ensure_agent_dispatched()
 
     # Conectar a LiveKit si no está conectado
@@ -326,12 +364,8 @@ async def handle_esp32_quart():
     esp32_websocket = websocket._get_current_object()
     logger.info("✅ ESP32 registrado")
 
-    # Notificar al agente
-    if active_room:
-        try:
-            await active_room.local_participant.publish_data(b"BRIDGE:connected", reliable=True)
-        except Exception as e:
-            logger.error(f"❌ Error notificando agente: {e}")
+    if not await safe_publish_data(b"BRIDGE:connected"):
+        logger.warning("⚠️ No se pudo notificar BRIDGE:connected al agente")
 
     # Audio de conexión — usa el nuevo streaming
     await _generate_and_send_audio("Conectado.")
@@ -376,10 +410,7 @@ async def handle_esp32_quart():
             # ── MODE ──────────────────────────────────────────────────────────
             elif message.startswith("MODE:"):
                 mode = message.split(":")[1].strip()
-                if active_room:
-                    await active_room.local_participant.publish_data(
-                        message.encode(), reliable=True
-                    )
+                await safe_publish_data(message.encode())
                 if mode != "assistant":
                     await _generate_and_send_audio(f"Modo {mode} activado.")
 
@@ -399,21 +430,17 @@ async def handle_esp32_quart():
                 received = len(_img_buffer)
                 logger.info(f"📷 Imagen: {received}/{_img_total} bytes")
 
-                if received > 0 and active_room:
+                if received > 0:
                     img_b64 = base64.b64encode(_img_buffer).decode("utf-8")
-                    try:
-                        await active_room.local_participant.publish_data(
-                            f"IMG_START:{_img_mode}:0".encode(), reliable=True
-                        )
-                        await active_room.local_participant.publish_data(
-                            f"IMG_CHUNK:0:{img_b64}".encode(), reliable=True
-                        )
-                        await active_room.local_participant.publish_data(
-                            b"IMG_END", reliable=True
-                        )
+                    ok = (
+                        await safe_publish_data(f"IMG_START:{_img_mode}:0".encode())
+                        and await safe_publish_data(f"IMG_CHUNK:0:{img_b64}".encode())
+                        and await safe_publish_data(b"IMG_END")
+                    )
+                    if ok:
                         logger.info("✅ Imagen enviada al agente")
-                    except Exception as e:
-                        logger.error(f"❌ Error enviando imagen: {e}")
+                    else:
+                        logger.warning("⚠️ Imagen no enviada — LiveKit no disponible")
 
             # ── RECORD_* — ESP32→bridge WAV ─────────────────────────────────
             elif message.startswith("RECORD_START:"):
@@ -435,13 +462,7 @@ async def handle_esp32_quart():
             # ── OBSTACLE ──────────────────────────────────────────────────────
             elif message.startswith("OBSTACLE:"):
                 dist = message.split(":")[1]
-                if active_room:
-                    try:
-                        await active_room.local_participant.publish_data(
-                            message.encode(), reliable=True
-                        )
-                    except Exception as e:
-                        logger.error(f"❌ Error enviando OBSTACLE: {e}")
+                await safe_publish_data(message.encode())
 
                 now = asyncio.get_event_loop().time()
                 global _last_obstacle_audio
