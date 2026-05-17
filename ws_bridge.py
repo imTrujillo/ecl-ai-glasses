@@ -312,7 +312,9 @@ async def _generate_and_send_audio(text: str):
 
         except Exception as e:
             logger.error(f"❌ Error en streaming de audio: {e}", exc_info=True)
-            esp32_websocket = None
+            err = str(e).lower()
+            if "closed" in err or "disconnect" in err or "broken" in err:
+                esp32_websocket = None
         finally:
             if proc and proc.returncode is None:
                 try:
@@ -417,8 +419,7 @@ async def handle_esp32_quart():
             elif message.startswith("MODE:"):
                 mode = message.split(":")[1].strip()
                 await safe_publish_data(message.encode())
-                if mode != "assistant":
-                    await _generate_and_send_audio(f"Modo {mode} activado.")
+                # TTS de modo lo envía el agente vía LiveKit (TTS:...) — no duplicar aquí.
 
             # ── IMG_START ─────────────────────────────────────────────────────
             elif message.startswith("IMG_START:"):
