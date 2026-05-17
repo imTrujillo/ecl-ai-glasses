@@ -139,8 +139,14 @@ async def _transcribe_wav_and_publish_to_agent(wav_bytes: bytes):
         logger.info(f"🎙️ Whisper: '{text}'")
         if text:
             await safe_publish_data(f"USER_UTTERANCE:{text}".encode("utf-8"))
+        else:
+            logger.warning("⚠️ Whisper devolvió texto vacío")
+            await _generate_and_send_audio(
+                "No se escuchó nada en el micrófono."
+            )
     except Exception as e:
         logger.error(f"❌ Transcripción / envío agente: {e}", exc_info=True)
+        await _generate_and_send_audio("Error al procesar el audio del micrófono.")
 
 
 async def connect_to_livekit():
@@ -441,6 +447,9 @@ async def handle_esp32_quart():
                         logger.info("✅ Imagen enviada al agente")
                     else:
                         logger.warning("⚠️ Imagen no enviada — LiveKit no disponible")
+                        await _generate_and_send_audio(
+                            "No pude enviar la imagen al servidor."
+                        )
 
             # ── RECORD_* — ESP32→bridge WAV ─────────────────────────────────
             elif message.startswith("RECORD_START:"):
