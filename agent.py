@@ -166,12 +166,40 @@ async def entrypoint(ctx: JobContext):
                 if not utt:
                     return
                 snippet = utt[:4000]
+                logger.info(f"[VOICE] usuario dijo: '{snippet[:80]}'")
 
                 async def _reply_voice_text(user_text):
+                    """Groq LLM directo: más fiable que session.generate_reply."""
                     try:
-                        await session.generate_reply(user_input=user_text)
+                        async with httpx.AsyncClient(timeout=25) as client:
+                            r = await client.post(
+                                "https://api.groq.com/openai/v1/chat/completions",
+                                headers={
+                                    "Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"
+                                },
+                                json={
+                                    "model": "llama-3.3-70b-versatile",
+                                    "messages": [
+                                        {"role": "system", "content": INSTRUCTIONS},
+                                        {"role": "user", "content": user_text},
+                                    ],
+                                    "max_tokens": 200,
+                                    "temperature": 0.5,
+                                },
+                            )
+                        data = r.json()
+                        if "choices" not in data:
+                            logger.error(f"[VOICE] Groq sin choices: {data}")
+                            await _say_and_send("No pude responder, intenta de nuevo.")
+                            return
+                        reply = data["choices"][0]["message"]["content"].strip()
+                        if not reply:
+                            reply = "No tengo respuesta para eso."
+                        logger.info(f"[VOICE] LLM → '{reply[:80]}'")
+                        await _say_and_send(reply)
                     except Exception as ex:
-                        logger.error(f"[VOICE/TEXT] generate_reply: {ex}")
+                        logger.error(f"[VOICE] error: {ex}", exc_info=True)
+                        await _say_and_send("Hubo un error procesando tu pregunta.")
 
                 asyncio.ensure_future(_reply_voice_text(snippet))
 
