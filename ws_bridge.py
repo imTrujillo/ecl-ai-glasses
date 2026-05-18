@@ -415,18 +415,14 @@ async def handle_esp32_quart():
 
     my_socket = websocket._get_current_object()
     esp32_websocket = my_socket
+    global _welcome_sent_for_session
+    _welcome_sent_for_session = False
     logger.info("✅ ESP32 registrado")
 
     if not await safe_publish_data(b"BRIDGE:connected"):
         logger.warning("⚠️ No se pudo notificar BRIDGE:connected al agente")
 
-    # Bienvenida tras conectar (espera breve a que el Dev abra TCP peer en la CAM)
-    async def _delayed_welcome():
-        await asyncio.sleep(2.5)
-        if esp32_websocket is my_socket:
-            await _maybe_send_welcome_tts()
-
-    asyncio.ensure_future(_delayed_welcome())
+    # La bienvenida se envía al recibir PEER_READY (Dev TCP conectado a la CAM).
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
@@ -464,6 +460,10 @@ async def handle_esp32_quart():
             # ── HELLO ─────────────────────────────────────────────────────────
             if message.startswith("HELLO:"):
                 await websocket.send(f"STATUS:Conectado a {active_room_name}")
+
+            elif message == "PEER_READY":
+                logger.info("🔊 CAM: Dev audio TCP listo — TTS bienvenida")
+                asyncio.ensure_future(_generate_and_send_audio(WELCOME_MESSAGE))
 
             # ── MODE ──────────────────────────────────────────────────────────
             elif message.startswith("MODE:"):
