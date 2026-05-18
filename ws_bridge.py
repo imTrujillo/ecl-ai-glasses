@@ -312,9 +312,8 @@ async def _generate_and_send_audio(text: str):
 
         except Exception as e:
             logger.error(f"❌ Error en streaming de audio: {e}", exc_info=True)
-            err = str(e).lower()
-            if "closed" in err or "disconnect" in err or "broken" in err:
-                esp32_websocket = None
+            # No poner esp32_websocket = None aquí: la CAM puede seguir conectada
+            # y el siguiente TTS fallaría con "ESP32 no conectado".
         finally:
             if proc and proc.returncode is None:
                 try:
@@ -332,7 +331,7 @@ async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
     global _collecting_record, _record_buffer, _record_expected
 
-    logger.info("📡 Nueva conexión WebSocket entrante")
+    logger.info("📡 Nueva conexión WebSocket entrante (ESP32-CAM)")
 
     # Sala debe existir en LiveKit Cloud antes de agent dispatch (evita 404)
     await _ensure_livekit_room_exists()
@@ -369,7 +368,8 @@ async def handle_esp32_quart():
             pass
         await asyncio.sleep(0.5)
 
-    esp32_websocket = websocket._get_current_object()
+    my_socket = websocket._get_current_object()
+    esp32_websocket = my_socket
     logger.info("✅ ESP32 registrado")
 
     if not await safe_publish_data(b"BRIDGE:connected"):
@@ -380,14 +380,14 @@ async def handle_esp32_quart():
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
-        while esp32_websocket is not None:
+        while True:
             await asyncio.sleep(15)
-            try:
-                if esp32_websocket is not None:
-                    await esp32_websocket.send("PING")
-            except Exception as e:
-                logger.warning(f"💔 Heartbeat falló: {e}")
+            if esp32_websocket is None:
                 break
+            try:
+                await esp32_websocket.send("PING")
+            except Exception as e:
+                logger.debug(f"Heartbeat send: {e}")
 
     heartbeat_task = asyncio.ensure_future(_heartbeat())
 
@@ -419,7 +419,7 @@ async def handle_esp32_quart():
             elif message.startswith("MODE:"):
                 mode = message.split(":")[1].strip()
                 await safe_publish_data(message.encode())
-                # TTS de modo lo envía el agente vía LiveKit (TTS:...) — no duplicar aquí.
+                logger.info(f"[WS] MODE:{mode} (agente LiveKit enviará TTS de modo)")
 
             # ── IMG_START ─────────────────────────────────────────────────────
             elif message.startswith("IMG_START:"):
@@ -487,8 +487,9 @@ async def handle_esp32_quart():
         logger.error(f"❌ Error en loop principal: {e}", exc_info=True)
     finally:
         heartbeat_task.cancel()
-        esp32_websocket = None
+        if esp32_websocket is my_socket:
+            esp32_websocket = None
+            logger.info("📡 ESP32 desconectado — limpieza completa")
         _collecting_image = False
         _collecting_record = False
         _record_buffer = bytearray()
-        logger.info("📡 ESP32 desconectado — limpieza completa")
