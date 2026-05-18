@@ -59,6 +59,24 @@ Prioriza respuestas útiles para la navegación y el día a día.
 """
 
 WELCOME_MESSAGE = (
-    "Hola, soy Navi, soy tu asistente visual. Estoy lista para ayudarte. "
-    "Puedes pedirme que lea texto, describa tu entorno o responder preguntas."
+    "Hola, soy Navi, tu asistente visual. "
+    "Botón A cambia el modo: asistente, lectura de texto u descripción del entorno. "
+    "Botón B captura una foto o graba tu voz, según el modo activo. "
+    "Los avisos de obstáculo suenan solos cuando detecto algo cerca."
 )
+
+# TTS al cambiar modo (también en ws_bridge.py para reproducir sin esperar al agente)
+MODE_TTS = {
+    "assistant": (
+        "Modo asistente activado. "
+        "Presiona el botón B para hablar conmigo por el micrófono."
+    ),
+    "ocr": (
+        "Modo lectura de texto activado. "
+        "Presiona el botón B para capturar y leer el texto que veas."
+    ),
+    "describe": (
+        "Modo descripción activado. "
+        "Presiona el botón B para describir lo que tienes delante."
+    ),
+}

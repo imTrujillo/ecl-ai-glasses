@@ -9,6 +9,7 @@ import httpx
 from quart import websocket
 from livekit import rtc
 from dotenv import load_dotenv
+from prompts import MODE_TTS, WELCOME_MESSAGE
 
 load_dotenv()
 
@@ -49,6 +50,8 @@ _dispatch_lock = asyncio.Lock()
 _dispatch_ready = False
 _last_connected_tts_ts = 0.0
 CONNECTED_TTS_COOLDOWN_S = 30.0
+_tts_pending: list[str] = []
+_welcome_sent_for_session = False
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LiveKit helpers
@@ -248,15 +251,16 @@ async def _reconnect_livekit():
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _generate_and_send_audio(text: str):
-    global esp32_websocket
+    global esp32_websocket, _tts_pending
 
     current_socket = esp32_websocket
     if current_socket is None:
-        logger.warning("⚠️ TTS ignorado — ESP32 no conectado")
+        logger.warning(f"⚠️ TTS ignorado — ESP32 no conectado: '{text[:50]}'")
         return
 
     if _audio_lock.locked():
-        logger.warning(f"⚠️ Audio en curso — descartando: '{text[:40]}'")
+        logger.warning(f"⚠️ Audio en curso — en cola ({len(_tts_pending)+1}): '{text[:50]}'")
+        _tts_pending.append(text)
         return
 
     async with _audio_lock:
@@ -346,6 +350,22 @@ async def _generate_and_send_audio(text: str):
                 except Exception:
                     pass
 
+    if _tts_pending:
+        nxt = _tts_pending.pop(0)
+        logger.info(f"🔊 Reproduciendo TTS en cola ({len(_tts_pending)} restantes): '{nxt[:50]}'")
+        asyncio.ensure_future(_generate_and_send_audio(nxt))
+
+
+async def _maybe_send_welcome_tts():
+    """Bienvenida una vez por sesión de bridge (el agente también la publica)."""
+    global _welcome_sent_for_session
+    if _welcome_sent_for_session:
+        logger.debug("Bienvenida ya enviada esta sesión")
+        return
+    _welcome_sent_for_session = True
+    logger.info(f"👋 TTS bienvenida ({len(WELCOME_MESSAGE)} chars)")
+    await _generate_and_send_audio(WELCOME_MESSAGE)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Handler principal WebSocket (Quart)
@@ -400,11 +420,13 @@ async def handle_esp32_quart():
     if not await safe_publish_data(b"BRIDGE:connected"):
         logger.warning("⚠️ No se pudo notificar BRIDGE:connected al agente")
 
-    # Audio de conexión sin bloquear el loop de entrada WS, con cooldown
-    now_ts = asyncio.get_event_loop().time()
-    if (now_ts - _last_connected_tts_ts) > CONNECTED_TTS_COOLDOWN_S:
-        _last_connected_tts_ts = now_ts
-        asyncio.ensure_future(_generate_and_send_audio("Conectado."))
+    # Bienvenida tras conectar (espera breve a que el Dev abra TCP peer en la CAM)
+    async def _delayed_welcome():
+        await asyncio.sleep(2.5)
+        if esp32_websocket is my_socket:
+            await _maybe_send_welcome_tts()
+
+    asyncio.ensure_future(_delayed_welcome())
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
@@ -445,9 +467,11 @@ async def handle_esp32_quart():
 
             # ── MODE ──────────────────────────────────────────────────────────
             elif message.startswith("MODE:"):
-                mode = message.split(":")[1].strip()
+                mode = message.split(":")[1].strip().lower()
                 await safe_publish_data(message.encode())
-                logger.info(f"[WS] MODE:{mode} (agente LiveKit enviará TTS de modo)")
+                tts = MODE_TTS.get(mode, f"Modo {mode} activado.")
+                logger.info(f"[WS] MODE:{mode} → TTS inmediato ({len(tts)} chars)")
+                asyncio.ensure_future(_generate_and_send_audio(tts))
 
             # ── IMG_START ─────────────────────────────────────────────────────
             elif message.startswith("IMG_START:"):

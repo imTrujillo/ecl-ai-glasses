@@ -11,7 +11,7 @@ from livekit.plugins import groq, silero
 from edge_tts_plugin import EdgeTTS
 from dotenv import load_dotenv
 from api import all_tools
-from prompts import INSTRUCTIONS, WELCOME_MESSAGE, MODE_OCR, MODE_DESCRIBE, MODE_ASSISTANT
+from prompts import INSTRUCTIONS, MODE_OCR, MODE_DESCRIBE, MODE_ASSISTANT
 
 load_dotenv()
 logger = logging.getLogger("smart-glasses-agent")
@@ -138,9 +138,7 @@ async def entrypoint(ctx: JobContext):
                 mode = message.split(":")[1].strip().lower()
                 if mode in mode_prompts:
                     current_mode["value"] = mode
-                    logger.info(f"Mode changed to: {mode}")
-                    if mode != "assistant":
-                        asyncio.ensure_future(_say_and_send(f"Modo {mode} activado."))
+                    logger.info(f"[MODE] Cambio a '{mode}' (TTS lo envía el bridge)")
 
             elif message.startswith("IMG_START:"):
                 # formato: IMG_START:modo:0
@@ -181,7 +179,7 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"DataChannel error: {e}")
 
     await session.start(room=ctx.room, agent=agent)
-    await _say_and_send(WELCOME_MESSAGE)
+    logger.info("✅ Agente listo — bienvenida y TTS de modo los envía el bridge al ESP32")
 
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
