@@ -42,6 +42,9 @@ _record_expected   = 0
 # Throttle alertas de obstáculo
 _last_obstacle_audio = 0.0
 OBSTACLE_AUDIO_COOLDOWN = 4.0
+_last_tts_text = ""
+_last_tts_ts = 0.0
+TTS_DEDUP_WINDOW_S = 2.5
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LiveKit helpers
@@ -167,11 +170,18 @@ async def connect_to_livekit():
 
     @room.on("data_received")
     def on_data(packet, *args, **kwargs):
+        global _last_tts_text, _last_tts_ts
         try:
             msg = packet.data.decode("utf-8")
             logger.info(f"📨 LiveKit→Bridge: {msg[:80]}")
             if msg.startswith("TTS:"):
                 text = msg[4:]
+                now = asyncio.get_event_loop().time()
+                if text == _last_tts_text and (now - _last_tts_ts) < TTS_DEDUP_WINDOW_S:
+                    logger.info(f"🔁 TTS duplicado ignorado: '{text[:60]}'")
+                    return
+                _last_tts_text = text
+                _last_tts_ts = now
                 logger.info(f"🔊 TTS recibido: '{text[:60]}'")
                 asyncio.ensure_future(_generate_and_send_audio(text))
         except Exception as e:
@@ -291,8 +301,9 @@ async def _generate_and_send_audio(text: str):
                 if not raw_chunk:
                     break   # ffmpeg terminó
 
-                if esp32_websocket is None:
-                    logger.warning("⚠️ ESP32 desconectado durante streaming")
+                # Si cambió el socket (reconexión CAM), detener stream viejo.
+                if esp32_websocket is None or esp32_websocket is not current_socket:
+                    logger.warning("⚠️ Socket ESP32 cambió/desconectó durante streaming")
                     break
 
                 await current_socket.send(raw_chunk)
