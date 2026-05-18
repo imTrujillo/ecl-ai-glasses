@@ -17,19 +17,30 @@ load_dotenv()
 logger = logging.getLogger("smart-glasses-agent")
 logger.setLevel(logging.INFO)
 
+_last_tts_sent = {"text": "", "ts": 0.0}
+
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_ALL)
 
     logger.info("⏳ Esperando participante humano...")
     participant = None
-    deadline = asyncio.get_event_loop().time() + 120
+    try:
+        participant = await asyncio.wait_for(
+            ctx.wait_for_participant(),
+            timeout=30.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("⏳ Timeout esperando participante humano")
+        return
+    except RuntimeError as e:
+        # Evita crash-loop cuando la sala se cae durante el warmup
+        logger.warning(f"⚠️ Sala desconectada esperando participante: {e}")
+        return
+    except Exception as e:
+        logger.error(f"❌ Error esperando participante: {e}")
+        return
 
-    participant = await asyncio.wait_for(
-    ctx.wait_for_participant(),
-    timeout=30.0
-    
-    )
     logger.info(f"✅ Got participant: {participant.identity}")
 
     if participant is None:
@@ -60,6 +71,8 @@ async def entrypoint(ctx: JobContext):
             await ctx.room.local_participant.publish_data(
                 f"TTS:{text}".encode(), reliable=True
             )
+            _last_tts_sent["text"] = text
+            _last_tts_sent["ts"] = asyncio.get_event_loop().time()
         except Exception as e:
             logger.error(f"Error enviando TTS data: {e}")
 
@@ -102,6 +115,14 @@ async def entrypoint(ctx: JobContext):
     def on_speech_committed(msg, *args, **kwargs):
         text = msg.content if hasattr(msg, "content") else str(msg)
         if text.strip():
+            now = asyncio.get_event_loop().time()
+            if (
+                text == _last_tts_sent["text"]
+                and (now - _last_tts_sent["ts"]) < 2.0
+            ):
+                return
+            _last_tts_sent["text"] = text
+            _last_tts_sent["ts"] = now
             asyncio.ensure_future(
                 ctx.room.local_participant.publish_data(
                     f"TTS:{text}".encode(), reliable=True

@@ -45,6 +45,8 @@ OBSTACLE_AUDIO_COOLDOWN = 4.0
 _last_tts_text = ""
 _last_tts_ts = 0.0
 TTS_DEDUP_WINDOW_S = 2.5
+_dispatch_lock = asyncio.Lock()
+_dispatch_ready = False
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LiveKit helpers
@@ -87,6 +89,13 @@ async def _ensure_livekit_room_exists():
 
 
 async def _ensure_agent_dispatched():
+    global _dispatch_ready
+    if _dispatch_ready:
+        return
+    async with _dispatch_lock:
+        if _dispatch_ready:
+            return
+
     from livekit.api import LiveKitAPI
     from livekit import api
 
@@ -102,6 +111,7 @@ async def _ensure_agent_dispatched():
         dispatches = getattr(existing, "agent_dispatches", [])
         if dispatches:
             logger.info(f"⚡ Agente ya despachado ({len(dispatches)} dispatch activo)")
+            _dispatch_ready = True
             return
         await lk.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
@@ -110,6 +120,7 @@ async def _ensure_agent_dispatched():
             )
         )
         logger.info("✅ Dispatch del agente creado")
+        _dispatch_ready = True
     except Exception as e:
         logger.error(f"❌ Error creando dispatch: {e}")
     finally:
@@ -386,8 +397,8 @@ async def handle_esp32_quart():
     if not await safe_publish_data(b"BRIDGE:connected"):
         logger.warning("⚠️ No se pudo notificar BRIDGE:connected al agente")
 
-    # Audio de conexión — usa el nuevo streaming
-    await _generate_and_send_audio("Conectado.")
+    # Audio de conexión sin bloquear el loop de entrada WS
+    asyncio.ensure_future(_generate_and_send_audio("Conectado."))
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
