@@ -47,6 +47,8 @@ _last_tts_ts = 0.0
 TTS_DEDUP_WINDOW_S = 2.5
 _dispatch_lock = asyncio.Lock()
 _dispatch_ready = False
+_last_connected_tts_ts = 0.0
+CONNECTED_TTS_COOLDOWN_S = 30.0
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LiveKit helpers
@@ -352,6 +354,7 @@ async def _generate_and_send_audio(text: str):
 async def handle_esp32_quart():
     global esp32_websocket, _img_buffer, _img_total, _img_mode, _collecting_image
     global _collecting_record, _record_buffer, _record_expected
+    global _last_connected_tts_ts
 
     logger.info("📡 Nueva conexión WebSocket entrante (ESP32-CAM)")
 
@@ -397,8 +400,11 @@ async def handle_esp32_quart():
     if not await safe_publish_data(b"BRIDGE:connected"):
         logger.warning("⚠️ No se pudo notificar BRIDGE:connected al agente")
 
-    # Audio de conexión sin bloquear el loop de entrada WS
-    asyncio.ensure_future(_generate_and_send_audio("Conectado."))
+    # Audio de conexión sin bloquear el loop de entrada WS, con cooldown
+    now_ts = asyncio.get_event_loop().time()
+    if (now_ts - _last_connected_tts_ts) > CONNECTED_TTS_COOLDOWN_S:
+        _last_connected_tts_ts = now_ts
+        asyncio.ensure_future(_generate_and_send_audio("Conectado."))
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
     async def _heartbeat():
