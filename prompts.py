@@ -61,8 +61,9 @@ Prioriza respuestas útiles para la navegación y el día a día.
 WELCOME_MESSAGE = (
     "Hola, soy Navi, tu asistente visual. "
     "Botón A cambia el modo: asistente, lectura de texto u descripción del entorno. "
-    "Botón B captura una foto o graba tu voz, según el modo activo. "
-    "Los avisos de obstáculo suenan solos cuando detecto algo cerca."
+    "En modo asistente, habla por el teléfono o pulsa botón B en las gafas. "
+    "En lectura o descripción, botón B toma una foto. "
+    "Los avisos de obstáculo suenan en este teléfono cuando detecto algo cerca."
 )
 
 # TTS al cambiar modo (también en ws_bridge.py para reproducir sin esperar al agente)

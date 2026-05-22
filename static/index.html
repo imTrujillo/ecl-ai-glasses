@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1018">
+  <title>NAVI — Gafas asistidas con IA | UEES 2026</title>
+  <meta name="description" content="NAVI: gafas asistidas con IA para personas con discapacidad visual. Prototipo UEES 2026.">
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/navi.css?v=13">
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+
+  <header class="site-header">
+    <a class="logo-link" href="/">
+      <img class="logo-img" src="/assets/navi-logo.png" alt="NAVI">
+      <span class="logo-sub">UEES 2026</span>
+    </a>
+    <nav class="nav-desktop-only" aria-label="Secciones">
+      <ul class="nav-main">
+        <li><a href="#mision">Misión</a></li>
+        <li><a href="#problemas">Problemas</a></li>
+        <li><a href="#solucion">Solución</a></li>
+        <li><a href="#arquitectura">Arquitectura</a></li>
+        <li><a href="#software">Software</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary nav-desktop-only" href="/app">Abrir panel</a>
+    <button
+      type="button"
+      class="nav-toggle nav-mobile-only"
+      aria-expanded="false"
+      aria-controls="nav-drawer"
+      aria-label="Abrir menú"
+    >
+      <span class="nav-toggle__bar"></span>
+      <span class="nav-toggle__bar"></span>
+      <span class="nav-toggle__bar"></span>
+    </button>
+  </header>
+
+  <div class="nav-backdrop nav-mobile-only" aria-hidden="true"></div>
+  <nav
+    id="nav-drawer"
+    class="nav-drawer nav-mobile-only"
+    aria-label="Menú principal"
+    aria-hidden="true"
+  >
+    <p class="nav-drawer__title">Navegación</p>
+    <ul class="nav-main">
+      <li><a href="#mision">Misión</a></li>
+      <li><a href="#problemas">Problemas</a></li>
+      <li><a href="#solucion">Solución</a></li>
+      <li><a href="#arquitectura">Arquitectura</a></li>
+      <li><a href="#software">Software</a></li>
+    </ul>
+    <a class="btn btn-primary" href="/app">Abrir panel NAVI</a>
+  </nav>
+
+  <main id="contenido">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-card">
+        <p class="eyebrow">Prototipo UEES · 2026</p>
+        <h1 id="hero-title">NAVI</h1>
+        <p class="tagline">
+          Gafas asistidas con inteligencia artificial para personas con discapacidad visual.
+          Describen el entorno, detectan obstáculos y responden por voz en tiempo real.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/app">Abrir panel accesible</a>
+          <a class="btn btn-secondary" href="#solucion">Ver cómo funciona</a>
+        </div>
+        <p class="hero-meta">Universidad Evangélica de El Salvador · proyecto académico</p>
+      </div>
+      <div class="hero-img-wrap">
+        <img
+          class="hero-img"
+          src="/assets/navi-device-blue.png"
+          alt="Prototipo NAVI: módulo con cámara y botones"
+          loading="eager"
+        >
+      </div>
+    </section>
+
+    <section id="mision" class="section container">
+      <h2 class="section-title">Misión</h2>
+      <p class="section-intro">
+        Democratizar la movilidad autónoma mediante hardware accesible y software de voz
+        que interpreta el entorno sin depender de una pantalla.
+      </p>
+      <div class="grid-3">
+        <article class="card">
+          <span class="card-num" aria-hidden="true">1</span>
+          <h3>Percepción</h3>
+          <p>Cámara y ultrasonido en el dispositivo capturan contexto y distancia.</p>
+        </article>
+        <article class="card">
+          <span class="card-num" aria-hidden="true">2</span>
+          <h3>Inteligencia</h3>
+          <p>Modelos de visión y lenguaje en el servidor generan respuestas claras.</p>
+        </article>
+        <article class="card">
+          <span class="card-num" aria-hidden="true">3</span>
+          <h3>Retroalimentación</h3>
+          <p>Audio por el teléfono enlazado vía panel web. Sin pantalla, solo voz.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="problemas" class="section container">
+      <h2 class="section-title">Problemas que abordamos</h2>
+      <p class="section-intro">
+        Las soluciones comerciales suelen ser costosas, cerradas o poco adaptadas al contexto local.
+      </p>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Costo elevado</h3>
+          <p>Dispositivos especializados fuera del alcance de muchas familias.</p>
+        </article>
+        <article class="card">
+          <h3>Dependencia visual</h3>
+          <p>Interfaces que asumen pantalla y no priorizan audio ni voz natural.</p>
+        </article>
+        <article class="card">
+          <h3>Obstáculos dinámicos</h3>
+          <p>Bastones y guías no siempre anticipan riesgos a la altura del torso o la cabeza.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="solucion" class="section container">
+      <div class="split">
+        <div>
+          <h2 class="section-title">Solución NAVI</h2>
+          <p class="section-intro">
+            Una ESP32-CAM en las gafas, un servidor Python en la red local
+            y un panel web accesible para escuchar y controlar modos sin mirar la pantalla.
+          </p>
+          <ul class="feature-list">
+            <li>Modos: <strong>asistente</strong>, <strong>lectura OCR</strong> y <strong>descripción</strong> del entorno.</li>
+            <li>Detección de obstáculos por ultrasonido con aviso por voz.</li>
+            <li>Grabación de voz desde el móvil hacia el agente IA.</li>
+            <li>Sincronización de modos entre los botones físicos y la web.</li>
+          </ul>
+        </div>
+        <div class="product-shot">
+          <img
+            src="/assets/navi-device-blue.png"
+            alt="Vista del prototipo NAVI"
+            loading="lazy"
+          >
+        </div>
+      </div>
+    </section>
+
+    <section id="arquitectura" class="section container">
+      <h2 class="section-title">Arquitectura del sistema</h2>
+      <p class="section-intro">
+        Esquema físico a la izquierda y flujo de software a la derecha.
+        En pantallas grandes se muestran lado a lado para mejor visibilidad.
+      </p>
+      <div class="arch-duo">
+        <figure class="arch-figure">
+          <figcaption class="arch-figure__cap">
+            <strong>Esquema hardware</strong>
+            <span>ESP32-CAM, alimentación, HC-SR04 y botones. La voz pasa por el teléfono.</span>
+          </figcaption>
+          <img
+            src="/assets/navi-hardware-schematic.png"
+            alt="Esquema hardware: batería, regulador, ESP32-CAM, sensor ultrasónico y enlace WiFi"
+            loading="lazy"
+          >
+        </figure>
+        <figure class="arch-figure">
+          <figcaption class="arch-figure__cap">
+            <strong>Flujo de software</strong>
+            <span>WebSocket entre gafas, servidor Python y panel web en el móvil.</span>
+          </figcaption>
+          <img
+            src="/assets/navi-architecture.png"
+            alt="Diagrama de flujo: ESP32-CAM, servidor y teléfono"
+            loading="lazy"
+          >
+        </figure>
+      </div>
+    </section>
+
+    <section id="software" class="section container">
+      <h2 class="section-title">Software</h2>
+      <p class="section-intro">Stack en Python: Quart, Groq (Whisper + Llama) y síntesis de voz. LiveKit opcional.</p>
+      <div class="stack-row">
+        <div class="stack-pill">
+          <strong>Servidor</strong>
+          Quart + Hypercorn, rutas estáticas y WebSocket <code>/ws</code> y <code>/ws/phone</code>.
+        </div>
+        <div class="stack-pill">
+          <strong>Agente</strong>
+          Visión, LLM y Whisper; respuesta en voz al navegador del teléfono.
+        </div>
+        <div class="stack-pill">
+          <strong>Cliente web</strong>
+          Panel accesible con micrófono, ondas en vivo y modos.
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band" aria-labelledby="cta-title">
+      <h2 id="cta-title" class="section-title">Probar el panel</h2>
+      <p>Conecta el prototipo en la misma red Wi-Fi y abre el panel desde el móvil.</p>
+      <p style="margin-top:1.25rem">
+        <a class="btn btn-primary" href="/app">Abrir panel NAVI</a>
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <img class="logo-img logo-img--footer" src="/assets/navi-logo.png" alt="">
+    <p>NAVI · Proyecto académico UEES 2026</p>
+  </footer>
+
+  <script src="/js/nav-mobile.js?v=13" defer></script>
+  <script src="/js/landing.js?v=13" defer></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1018">
+  <title>NAVI — Panel</title>
+  <meta name="description" content="Panel NAVI: dispositivos conectados, voz y modos.">
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/navi.css?v=14">
+</head>
+<body class="app-body">
+
+  <header class="app-topbar">
+    <a class="logo-link" href="/" aria-label="NAVI inicio">
+      <img class="logo-img" src="/assets/navi-logo.png" alt="NAVI">
+    </a>
+    <a class="btn-home nav-desktop-only" href="/">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1V9.5z"/></svg>
+      Inicio
+    </a>
+    <button
+      type="button"
+      class="nav-toggle nav-mobile-only"
+      aria-expanded="false"
+      aria-controls="app-drawer"
+      aria-label="Abrir menú"
+    >
+      <span class="nav-toggle__bar"></span>
+      <span class="nav-toggle__bar"></span>
+      <span class="nav-toggle__bar"></span>
+    </button>
+  </header>
+
+  <div class="nav-backdrop nav-mobile-only" aria-hidden="true"></div>
+  <nav
+    id="app-drawer"
+    class="nav-drawer nav-mobile-only"
+    aria-label="Menú del panel"
+    aria-hidden="true"
+  >
+    <p class="nav-drawer__title">Panel NAVI</p>
+    <ul class="nav-main">
+      <li><a href="/">Proyecto</a></li>
+      <li><a href="#main">Controles</a></li>
+      <li><a href="#mode-section">Modos</a></li>
+      <li><a href="#log-section">Registro</a></li>
+    </ul>
+    <a class="btn btn-primary" href="/">Ver landing</a>
+  </nav>
+
+  <div class="app-layout" id="main">
+    <header class="app-hero">
+      <p class="eyebrow">Panel NAVI</p>
+      <h1>Tu voz, tus gafas</h1>
+      <p>Conecta el servidor, espera a las gafas y habla con NAVI desde aquí.</p>
+    </header>
+
+    <p class="panel-status" id="panel-status">Servidor: <strong>sin conexión</strong></p>
+
+    <div id="announce" class="visually-hidden" aria-live="assertive" aria-atomic="true"></div>
+
+    <section class="viz-card" id="viz-card" aria-label="Actividad de audio">
+      <canvas id="wave-canvas" width="400" height="72" role="img" aria-label="Ondas de sonido"></canvas>
+      <p class="viz-label" id="viz-label">En espera</p>
+    </section>
+
+    <section class="pair-section" id="pair-section" aria-labelledby="pair-title" hidden>
+      <h2 id="pair-title">Dispositivos conectados</h2>
+      <div class="pair-card" id="pair-card">
+        <div class="pair-card__icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+            <circle cx="12" cy="4" r="2"/><path d="M8 20v-6l-2-3h12l-2 3v6"/><path d="M6 11h12"/>
+          </svg>
+        </div>
+        <div class="pair-card__body">
+          <span class="pair-card__name">NAVI · Gafas</span>
+          <span class="pair-card__meta">ESP32-CAM conectado</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="action-row">
+      <button type="button" class="action-btn action-btn--session" id="btn-session" aria-pressed="false">
+        <svg class="action-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M5 12.5a7 7 0 0114 0"/><path d="M8.5 16.5l-1.5 3h10l-1.5-3"/><path d="M12 12.5v4"/>
+        </svg>
+        <span id="label-session">Conectar</span>
+      </button>
+      <button
+        type="button"
+        class="action-btn action-btn--mic action-btn--hidden"
+        id="btn-record"
+        aria-pressed="false"
+      >
+        <svg class="action-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="9" y="2" width="6" height="11" rx="3"/>
+          <path d="M5 10a7 7 0 0014 0"/><path d="M12 17v5"/>
+        </svg>
+        <span id="label-record">Grabar</span>
+      </button>
+      <button
+        type="button"
+        class="action-btn action-btn--photo action-btn--hidden"
+        id="btn-photo"
+        aria-label="Tomar foto según el modo activo"
+      >
+        <svg class="action-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M4 7h3l2-2h6l2 2h3a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span id="label-photo">Foto</span>
+      </button>
+    </div>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+
+    <section class="mode-section" id="mode-section" hidden aria-labelledby="mode-title">
+      <h2 id="mode-title">Modo de trabajo</h2>
+      <div class="mode-chips" role="group" aria-label="Seleccionar modo">
+        <button type="button" class="mode-chip is-active" data-mode="assistant" disabled>
+          <span class="mode-chip__icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 100 18 9 9 0 000-18z"/><path d="M9 10h.01M15 10h.01M9.5 15a3 3 0 004 0"/></svg>
+          </span>
+          <span class="mode-chip__text">
+            Asistente
+            <small>Preguntas y conversación</small>
+          </span>
+        </button>
+        <button type="button" class="mode-chip" data-mode="ocr" disabled>
+          <span class="mode-chip__icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+          </span>
+          <span class="mode-chip__text">
+            Lectura
+            <small>OCR y texto en voz alta</small>
+          </span>
+        </button>
+        <button type="button" class="mode-chip" data-mode="describe" disabled>
+          <span class="mode-chip__icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8l10-4 10 4-10 4-10-4z"/><path d="M6 10v6c0 2 4 4 6 4s6-2 6-4v-6"/></svg>
+          </span>
+          <span class="mode-chip__text">
+            Entorno
+            <small>Describe la escena</small>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section class="log-card" aria-label="Registro" hidden id="log-section">
+      <div id="sr-log"></div>
+    </section>
+
+    <p class="app-back">
+      <a href="/">Volver al proyecto</a>
+    </p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.9/dist/livekit-client.umd.min.js" crossorigin="anonymous"></script>
+  <script src="/js/nav-mobile.js?v=14" defer></script>
+  <script src="/js/app.js?v=15" defer></script>
+</body>
+</html>

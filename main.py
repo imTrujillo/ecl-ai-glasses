@@ -24,10 +24,18 @@ async def run_server():
 
 
 async def main():
-    await asyncio.gather(
-        run_server(),
-        run_agent(),
+    tasks = [run_server()]
+    use_lk = os.getenv("NAVI_USE_LIVEKIT", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
     )
+    if use_lk:
+        tasks.append(run_agent())
+    else:
+        print("[navi] Agente LiveKit omitido (NAVI_USE_LIVEKIT=0)")
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     asyncio.run(main())
